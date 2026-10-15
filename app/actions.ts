@@ -1,0 +1,100 @@
+"use server";
+
+// Each Spotify action performs exactly one HTTP request; the browser queues them and
+// handles 429 retries (lib/spotify-client.ts). The access token never leaves the server.
+
+import { auth } from "@/auth";
+import { classifyTrack, markIncoherent, type ClassifiedTrack } from "@/lib/classify";
+import { getTagsForTracks } from "@/lib/lastfm";
+import { BATCH_SIZE, DESCRIPTION, TRACK_URI } from "@/lib/playlist-plan";
+import {
+  getPlaylistsPage,
+  getPlaylistTracksPage,
+  spotifyGet,
+  spotifyPost,
+  type ApiError,
+  type ApiResult,
+  type Me,
+} from "@/lib/spotify";
+
+const SPOTIFY_ID = /^[A-Za-z0-9]+$/;
+
+async function token(): Promise<string | null> {
+  const session = await auth();
+  return session?.accessToken && !session.error ? session.accessToken : null;
+}
+
+const fail = (method: string, url: string, status: number | null, raw: string) =>
+  ({ ok: false, method, url, status, raw }) as const;
+
+const notAuthenticated = (method: string, url: string) =>
+  fail(method, url, 401, "Sessão expirada ou ausente. Entre novamente.");
+
+export async function getMe() {
+  const t = await token();
+  if (!t) return notAuthenticated("GET", "/me");
+  return spotifyGet<Me>("/me", t);
+}
+
+export async function getMyPlaylistsPage(offset: number) {
+  const t = await token();
+  if (!t) return notAuthenticated("GET", "/me/playlists");
+  return getPlaylistsPage(Math.max(0, Math.floor(offset)), t);
+}
+
+export async function getTracksPage(playlistId: string, offset: number) {
+  const url = `/playlists/${playlistId}/items`;
+  const t = await token();
+  if (!t) return notAuthenticated("GET", url);
+  if (!SPOTIFY_ID.test(playlistId)) return fail("GET", url, null, "ID de playlist inválido.");
+  return getPlaylistTracksPage(playlistId, Math.max(0, Math.floor(offset)), t);
+}
+
+export async function createPlaylist(
+  name: string,
+  isPublic: boolean,
+): Promise<ApiResult<{ id: string; url: string }>> {
+  const t = await token();
+  if (!t) return notAuthenticated("POST", "/me/playlists");
+
+  const trimmed = name.trim().slice(0, 100);
+  if (!trimmed) return fail("POST", "/me/playlists", null, "Nome vazio.");
+
+  const res = await spotifyPost<{ id: string; external_urls: { spotify: string } }>("/me/playlists", t, {
+    name: trimmed,
+    public: isPublic,
+    description: DESCRIPTION,
+  });
+  if (!res.ok) return res;
+  return { ok: true, data: { id: res.data.id, url: res.data.external_urls.spotify } };
+}
+
+// Appends only; never removes, reorders, renames or changes privacy
+export async function addTracks(
+  playlistId: string,
+  uris: string[],
+): Promise<ApiResult<{ snapshot_id: string }>> {
+  const url = `/playlists/${playlistId}/items`;
+  const t = await token();
+  if (!t) return notAuthenticated("POST", url);
+
+  if (!SPOTIFY_ID.test(playlistId) || uris.length === 0 || uris.length > BATCH_SIZE || !uris.every((u) => TRACK_URI.test(u))) {
+    return fail("POST", url, null, "Lote inválido (ID, quantidade ou URI).");
+  }
+  return spotifyPost<{ snapshot_id: string }>(url, t, { uris });
+}
+
+// Last.fm only (no Spotify calls): tags + family classification
+export async function analyzeTracks(
+  tracks: { key: string; uri: string | null; name: string; artist: string }[],
+): Promise<{ classified: ClassifiedTrack[]; errors: ApiError[] }> {
+  if (!(await token())) {
+    return { classified: [], errors: [notAuthenticated("POST", "analyzeTracks")] };
+  }
+  const { results, errors } = await getTagsForTracks(tracks.map((t) => ({ name: t.name, artist: t.artist })));
+  const classified = tracks.map((t, i) =>
+    classifyTrack({ ...t, artistTags: results[i].artist, trackTags: results[i].track }),
+  );
+  markIncoherent(classified);
+  return { classified, errors };
+}

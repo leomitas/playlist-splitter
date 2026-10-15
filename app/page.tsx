@@ -1,40 +1,8 @@
 import { Suspense } from "react";
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth, signIn, signOut } from "@/auth";
-
-type SpotifyImage = { url: string };
-type Me = {
-  display_name: string | null;
-  email?: string;
-  images?: SpotifyImage[];
-};
-type Playlist = {
-  id: string;
-  name: string;
-  images: SpotifyImage[] | null;
-  owner: { display_name: string | null };
-};
-
-type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
-async function spotifyGet<T>(path: string, token: string): Promise<ApiResult<T>> {
-  try {
-    const res = await fetch(`https://api.spotify.com/v1${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      const message = body?.error?.message ?? res.statusText;
-      return { ok: false, error: `GET ${path} → ${res.status} ${message}` };
-    }
-    return { ok: true, data: (await res.json()) as T };
-  } catch (err) {
-    return { ok: false, error: `GET ${path} → falha de rede: ${String(err)}` };
-  }
-}
+import { SpotifyApp } from "./spotify-app";
 
 async function login() {
   "use server";
@@ -101,62 +69,10 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
     );
   }
 
-  const [me, playlists] = await Promise.all([
-    spotifyGet<Me>("/me", session.accessToken),
-    spotifyGet<{ items: Playlist[] }>("/me/playlists?limit=5", session.accessToken),
-  ]);
-
   return (
     <div className="flex w-full flex-col gap-6">
-      <section className="flex items-center gap-4">
-        {me.ok ? (
-          <>
-            {me.data.images?.[0] && (
-              <Image
-                src={me.data.images[0].url}
-                alt=""
-                width={64}
-                height={64}
-                className="rounded-full"
-              />
-            )}
-            <div>
-              <p className="text-lg font-semibold">{me.data.display_name ?? "(sem nome)"}</p>
-              <p className="text-sm text-gray-600">
-                {me.data.email ?? "e-mail não retornado pela API"}
-              </p>
-            </div>
-          </>
-        ) : (
-          <ErrorBox>{me.error}</ErrorBox>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-2 font-semibold">Primeiras 5 playlists</h2>
-        {!playlists.ok ? (
-          <ErrorBox>{playlists.error}</ErrorBox>
-        ) : playlists.data.items.length === 0 ? (
-          <p className="text-sm text-gray-600">Nenhuma playlist encontrada.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {playlists.data.items.filter(Boolean).map((p) => (
-              <li key={p.id} className="flex items-center gap-3">
-                {p.images?.[0] ? (
-                  <Image src={p.images[0].url} alt="" width={40} height={40} />
-                ) : (
-                  <div className="h-10 w-10 bg-gray-200" />
-                )}
-                <div>
-                  <p>{p.name}</p>
-                  <p className="text-xs text-gray-500">{p.owner.display_name}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
+      {/* Spotify data is loaded on demand in the browser (queued, cached per tab) */}
+      <SpotifyApp />
       <form action={logout}>
         <button className="rounded-full border px-6 py-2 hover:bg-gray-100">Sair</button>
       </form>
@@ -166,7 +82,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
 
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 p-6">
       <h1 className="text-2xl font-bold">Spotify Login Test</h1>
       <Suspense fallback={<p>Carregando…</p>}>
         <Content searchParams={searchParams} />
