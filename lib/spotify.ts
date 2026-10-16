@@ -19,6 +19,9 @@ export type Playlist = {
   collaborative: boolean;
   description?: string | null;
   snapshot_id: string;
+  // track count; Feb 2026 API renamed "tracks" to "items", accept both
+  tracks?: { total: number } | null;
+  items?: { total: number } | null;
 };
 type Track = {
   id: string | null;

@@ -4,15 +4,12 @@
 // handles 429 retries (lib/spotify-client.ts). The access token never leaves the server.
 
 import { auth } from "@/auth";
-import { classifyTrack, markIncoherent, type ClassifiedTrack } from "@/lib/classify";
-import { getTagsForTracks } from "@/lib/lastfm";
 import { BATCH_SIZE, DESCRIPTION, TRACK_URI } from "@/lib/playlist-plan";
 import {
   getPlaylistsPage,
   getPlaylistTracksPage,
   spotifyGet,
   spotifyPost,
-  type ApiError,
   type ApiResult,
   type Me,
 } from "@/lib/spotify";
@@ -82,19 +79,4 @@ export async function addTracks(
     return fail("POST", url, null, "Lote inválido (ID, quantidade ou URI).");
   }
   return spotifyPost<{ snapshot_id: string }>(url, t, { uris });
-}
-
-// Last.fm only (no Spotify calls): tags + family classification
-export async function analyzeTracks(
-  tracks: { key: string; uri: string | null; name: string; artist: string }[],
-): Promise<{ classified: ClassifiedTrack[]; errors: ApiError[] }> {
-  if (!(await token())) {
-    return { classified: [], errors: [notAuthenticated("POST", "analyzeTracks")] };
-  }
-  const { results, errors } = await getTagsForTracks(tracks.map((t) => ({ name: t.name, artist: t.artist })));
-  const classified = tracks.map((t, i) =>
-    classifyTrack({ ...t, artistTags: results[i].artist, trackTags: results[i].track }),
-  );
-  markIncoherent(classified);
-  return { classified, errors };
 }

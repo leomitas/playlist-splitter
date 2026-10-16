@@ -14,6 +14,8 @@ export type PreviewState = {
   groups: Group[];
   // trackKey -> family it was auto-moved from (groups under MIN_GROUP_SIZE go to "Outros")
   autoMoved: Record<string, string>;
+  // group id -> group it was merged into, so tracks arriving later follow the merge
+  aliases: Record<string, string>;
 };
 
 export type Action =
@@ -22,6 +24,7 @@ export type Action =
   | { type: "move"; trackKey: string; toGroupId: string }
   | { type: "merge"; fromId: string; intoId: string }
   | { type: "restoreAutoMoved"; family: string }
+  | { type: "addTracks"; tracks: ClassifiedTrack[] }
   | { type: "reset"; state: PreviewState };
 
 export function initialState(tracks: ClassifiedTrack[]): PreviewState {
@@ -48,13 +51,55 @@ export function initialState(tracks: ClassifiedTrack[]): PreviewState {
   // only the largest group starts selected ("Outros" is last, so only if it's the only one)
   const first = groups.find((g) => g.trackKeys.length > 0);
   if (first) first.include = true;
-  return { groups, autoMoved };
+  return { groups, autoMoved, aliases: {} };
 }
 
 function withoutKey<T>(record: Record<string, T>, key: string) {
   const copy = { ...record };
   delete copy[key];
   return copy;
+}
+
+// Adds tracks that arrived after the preview was built, keeping every user choice:
+// renamed/included groups stay as they are, merges are followed, moved tracks aren't touched.
+function addTracks(state: PreviewState, tracks: ClassifiedTrack[]): PreviewState {
+  const known = new Set(state.groups.flatMap((g) => g.trackKeys));
+  const groups = state.groups.map((g) => ({ ...g, trackKeys: [...g.trackKeys] }));
+  const autoMoved = { ...state.autoMoved };
+  const find = (id: string) => groups.find((g) => g.id === (state.aliases[id] ?? id));
+  // "Outros" can itself have been merged into another group
+  const otherGroup = () => {
+    let g = find(OTHER);
+    if (!g) groups.push((g = { id: OTHER, name: OTHER, include: false, trackKeys: [] }));
+    return g;
+  };
+
+  for (const t of tracks) {
+    if (known.has(t.key)) continue;
+    known.add(t.key);
+
+    const target = t.family === OTHER ? otherGroup() : find(t.family);
+    if (target) {
+      target.trackKeys.push(t.key);
+      continue;
+    }
+
+    // family without a group yet: wait in "Outros" until it reaches the minimum size
+    const waiting = Object.keys(autoMoved).filter((k) => autoMoved[k] === t.family);
+    if (waiting.length + 1 < MIN_GROUP_SIZE) {
+      otherGroup().trackKeys.push(t.key);
+      autoMoved[t.key] = t.family;
+      continue;
+    }
+    const moved = new Set(waiting);
+    for (const g of groups) g.trackKeys = g.trackKeys.filter((k) => !moved.has(k));
+    for (const k of waiting) delete autoMoved[k];
+    const group = { id: t.family, name: t.family, include: false, trackKeys: [...waiting, t.key] };
+    // new groups go before "Outros", which stays last
+    const otherIndex = groups.findIndex((g) => g.id === OTHER);
+    groups.splice(otherIndex === -1 ? groups.length : otherIndex, 0, group);
+  }
+  return { ...state, groups, autoMoved };
 }
 
 export function reducer(state: PreviewState, action: Action): PreviewState {
@@ -77,15 +122,21 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
         return g.id === action.toGroupId ? { ...g, trackKeys: [...rest, action.trackKey] } : { ...g, trackKeys: rest };
       });
       // a manual move overrides the automatic suggestion
-      return { groups, autoMoved: withoutKey(state.autoMoved, action.trackKey) };
+      return { ...state, groups, autoMoved: withoutKey(state.autoMoved, action.trackKey) };
     }
 
     case "merge": {
       if (action.fromId === action.intoId) return state;
       const from = state.groups.find((g) => g.id === action.fromId);
       if (!from) return state;
+      // earlier merges into fromId now point at intoId as well
+      const aliases = Object.fromEntries(
+        Object.entries(state.aliases).map(([k, v]) => [k, v === action.fromId ? action.intoId : v]),
+      );
+      aliases[action.fromId] = action.intoId;
       return {
         ...state,
+        aliases,
         groups: state.groups
           .filter((g) => g.id !== action.fromId)
           .map((g) => (g.id === action.intoId ? { ...g, trackKeys: [...g.trackKeys, ...from.trackKeys] } : g)),
@@ -103,8 +154,11 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
       const existing = groups.find((g) => g.id === action.family);
       if (existing) existing.trackKeys.push(...keys);
       else groups.push({ id: action.family, name: action.family, include: true, trackKeys: keys });
-      return { groups, autoMoved };
+      return { ...state, groups, autoMoved };
     }
+
+    case "addTracks":
+      return addTracks(state, action.tracks);
 
     case "reset":
       return action.state;

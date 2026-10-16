@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { spotify } from "@/lib/spotify-client";
+import type { RateLimitState } from "@/lib/request-queue";
 
-export function RateLimitNotice() {
-  const state = useSyncExternalStore(spotify.subscribe, spotify.getRateLimit, () => null);
+type Queue = { subscribe: (l: () => void) => () => void; getRateLimit: () => RateLimitState };
+
+export function RateLimitNotice({ queue, service }: { queue: Queue; service: string }) {
+  const state = useSyncExternalStore(queue.subscribe, queue.getRateLimit, () => null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -17,7 +19,7 @@ export function RateLimitNotice() {
   const seconds = Math.max(0, Math.ceil((state.retryAt - now) / 1000));
   return (
     <p className="rounded-md border border-yellow-400 bg-yellow-50 p-2 text-sm text-yellow-900">
-      Spotify limitou as requisições, tentando de novo em {seconds}s
+      {service} limitou as requisições, retomando em {seconds}s
     </p>
   );
 }

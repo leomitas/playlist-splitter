@@ -1,5 +1,5 @@
-// Per-tab cache (memory + sessionStorage) for Spotify reads.
-// Playlist tracks are keyed by snapshot_id, so an unchanged playlist is never re-fetched.
+// Per-tab cache (memory + sessionStorage) for the profile and the playlist list.
+// Playlist tracks live in IndexedDB instead (app/spotify-data.ts).
 
 import type { ApiResult, PageResult } from "@/lib/spotify";
 
@@ -9,7 +9,6 @@ const mem = new Map<string, unknown>();
 export const cacheKeys = {
   me: `${PREFIX}me`,
   playlists: `${PREFIX}playlists`,
-  tracks: (playlistId: string, snapshotId: string) => `${PREFIX}tracks:${playlistId}:${snapshotId}`,
 };
 
 function storage(): Storage | null {
@@ -64,17 +63,16 @@ export async function cached<T>(
     if (hit !== undefined) return { ok: true, data: hit };
   }
   const r = await load();
-  if (r.ok) {
-    // keep only the latest snapshot of a playlist's tracks
-    const m = key.match(/^sp:tracks:([^:]+):/);
-    if (m) removeWhere((k) => k.startsWith(`${PREFIX}tracks:${m[1]}:`) && k !== key);
-    write(key, r.data);
-  }
+  if (r.ok) write(key, r.data);
   return r;
 }
 
 export function invalidate(key: string) {
   removeWhere((k) => k === key);
+}
+
+export function clearSessionCache() {
+  removeWhere((k) => k.startsWith(PREFIX));
 }
 
 export async function collectPages<T>(

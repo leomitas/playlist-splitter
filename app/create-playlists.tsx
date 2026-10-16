@@ -80,10 +80,12 @@ function RawError({ error }: { error: ApiError }) {
 export function CreatePlaylists({
   groups,
   tracks,
+  disabledReason,
   onDone,
 }: {
   groups: Group[];
   tracks: Map<string, ClassifiedTrack>;
+  disabledReason?: string;
   onDone: () => void;
 }) {
   const [phase, setPhase] = useState<"idle" | "checking" | "confirm" | "running" | "done">("idle");
@@ -176,10 +178,10 @@ export function CreatePlaylists({
       {phase === "idle" && (
         <button
           className="self-start rounded-full bg-green-600 px-5 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-40"
-          disabled={planPlaylists(groups, tracks).length === 0}
+          disabled={!!disabledReason || planPlaylists(groups, tracks).length === 0}
           onClick={openConfirm}
         >
-          Criar playlists selecionadas
+          {disabledReason ?? "Criar playlists selecionadas"}
         </button>
       )}
 
@@ -240,8 +242,12 @@ export function CreatePlaylists({
             Tornar públicas as playlists novas (padrão: privadas; as existentes não mudam)
           </label>
           <div className="flex gap-2">
-            <button className="rounded-full bg-green-600 px-5 py-2 font-semibold text-white hover:bg-green-700" onClick={run}>
-              Confirmar
+            <button
+              className="rounded-full bg-green-600 px-5 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-40"
+              disabled={!!disabledReason}
+              onClick={run}
+            >
+              {disabledReason ?? "Confirmar"}
             </button>
             <button className="rounded-full border px-5 py-2 hover:bg-gray-100" onClick={() => setPhase("idle")}>
               Cancelar

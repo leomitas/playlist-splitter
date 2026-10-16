@@ -29,6 +29,11 @@ export function normalizeName(s: string) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// True when the lookup alone is enough to give the track a family (same rule as classifyTrack)
+export function hasFamilyTag(lookup: Lookup | null) {
+  return !!lookup?.tags.some((t) => t.count >= MIN_COUNT && TAG_TO_FAMILY.has(t.name));
+}
+
 export function classifyTrack(input: {
   key: string;
   uri: string | null;
@@ -89,22 +94,46 @@ export function markIncoherent(tracks: ClassifiedTrack[]) {
   const classified = tracks.filter((t) => t.family !== OTHER);
   if (classified.length < MIN_CLASSIFIED_FOR_COHERENCE) return;
 
-  for (const t of classified) {
-    if (t.lowConfidence) continue;
-    const self = normalizeName(t.artist);
-    const counts = new Map<string, number>();
-    for (const o of classified) {
-      if (normalizeName(o.artist) === self) continue;
-      for (const tag of o.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-    }
+  // Tag counts over all tracks and per artist; "everyone but this artist" is total minus own.
+  // Runs on every incremental update, so no track-by-track pairwise comparison.
+  const total = new Map<string, number>();
+  // ties are broken by first appearance among the *other* artists' tracks, so keep the
+  // first position for the first two distinct artists using each tag
+  const firsts = new Map<string, { artist: string; pos: number }[]>();
+  const byArtist = new Map<string, { counts: Map<string, number>; tracks: ClassifiedTrack[] }>();
+  classified.forEach((t, pos) => {
+    const a = normalizeName(t.artist);
+    let entry = byArtist.get(a);
+    if (!entry) byArtist.set(a, (entry = { counts: new Map(), tracks: [] }));
+    entry.tracks.push(t);
+    t.tags.forEach((tag, i) => {
+      total.set(tag, (total.get(tag) ?? 0) + 1);
+      entry.counts.set(tag, (entry.counts.get(tag) ?? 0) + 1);
+      const f = firsts.get(tag) ?? [];
+      // position = track index, then tag index within the track
+      if (f.length < 2 && !f.some((x) => x.artist === a)) firsts.set(tag, [...f, { artist: a, pos: pos * 1000 + i }]);
+    });
+  });
+
+  for (const [artist, { counts, tracks: own }] of byArtist) {
+    const others = [...total.entries()]
+      .map(([tag, n]) => ({
+        tag,
+        n: n - (counts.get(tag) ?? 0),
+        pos: firsts.get(tag)!.find((x) => x.artist !== artist)?.pos ?? Infinity,
+      }))
+      .filter((o) => o.n > 0);
     const topWords = new Set(
-      [...counts.entries()]
-        .sort((a, b) => b[1] - a[1])
+      others
+        .sort((a, b) => b.n - a.n || a.pos - b.pos)
         .slice(0, COHERENCE_TOP)
-        .flatMap(([tag]) => words(tag)),
+        .flatMap((o) => words(o.tag)),
     );
-    if (!t.tags.some((tag) => words(tag).some((w) => topWords.has(w)))) {
-      t.lowConfidence = "tags fora do padrão da seleção";
+    for (const t of own) {
+      if (t.lowConfidence) continue;
+      if (!t.tags.some((tag) => words(tag).some((w) => topWords.has(w)))) {
+        t.lowConfidence = "tags fora do padrão da seleção";
+      }
     }
   }
 }

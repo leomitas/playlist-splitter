@@ -8,23 +8,29 @@ import { CreatePlaylists } from "./create-playlists";
 
 const noopSubscribe = () => () => {};
 
-// Saved state only applies if it covers exactly the same tracks
+// Saved state belongs to one analysis run (storageKey); tracks it doesn't know yet are added
+// by the effect below, tracks it knows that are gone are dropped
 function loadSaved(storageKey: string, tracks: ClassifiedTrack[]): PreviewState | null {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null") as PreviewState | null;
     if (!saved?.groups) return null;
-    const savedKeys = saved.groups.flatMap((g) => g.trackKeys).sort();
-    const keys = tracks.map((t) => t.key).sort();
-    if (savedKeys.length !== keys.length || savedKeys.some((k, i) => k !== keys[i])) return null;
-    return saved;
+    const keys = new Set(tracks.map((t) => t.key));
+    return {
+      groups: saved.groups.map((g) => ({ ...g, trackKeys: g.trackKeys.filter((k) => keys.has(k)) })),
+      autoMoved: saved.autoMoved ?? {},
+      aliases: saved.aliases ?? {},
+    };
   } catch {
     return null;
   }
 }
 
 type PreviewProps = {
+  // grows while the analysis runs
   tracks: ClassifiedTrack[];
   storageKey: string;
+  // set while creating playlists isn't allowed (analysis still running)
+  createDisabledReason?: string;
   // called after playlists were created/updated in Spotify
   onSpotifyChanged: () => void;
 };
@@ -36,11 +42,18 @@ export function Preview(props: PreviewProps) {
   return <PreviewEditor {...props} />;
 }
 
-function PreviewEditor({ tracks, storageKey, onSpotifyChanged }: PreviewProps) {
+function PreviewEditor({ tracks, storageKey, createDisabledReason, onSpotifyChanged }: PreviewProps) {
   const fresh = useMemo(() => initialState(tracks), [tracks]);
   const [state, dispatch] = useReducer(reducer, null, () => loadSaved(storageKey, tracks) ?? fresh);
   const [mergeTarget, setMergeTarget] = useState<Record<string, string>>({});
   const byKey = useMemo(() => new Map(tracks.map((t) => [t.key, t])), [tracks]);
+
+  // new playlists finished: slot their tracks in without touching the user's edits
+  useEffect(() => {
+    const known = new Set(state.groups.flatMap((g) => g.trackKeys));
+    const added = tracks.filter((t) => !known.has(t.key));
+    if (added.length > 0) dispatch({ type: "addTracks", tracks: added });
+  }, [tracks, state.groups]);
 
   useEffect(() => {
     try {
@@ -129,7 +142,8 @@ function PreviewEditor({ tracks, storageKey, onSpotifyChanged }: PreviewProps) {
 
           <ul className="flex flex-col">
             {g.trackKeys.map((k) => {
-              const t = byKey.get(k)!;
+              const t = byKey.get(k);
+              if (!t) return null;
               return (
                 <li key={k} className={`flex flex-wrap items-center gap-2 border-t px-2 py-1 ${t.lowConfidence ? "bg-yellow-100" : ""}`}>
                   <div className="min-w-0 flex-1">
@@ -161,7 +175,12 @@ function PreviewEditor({ tracks, storageKey, onSpotifyChanged }: PreviewProps) {
         </details>
       ))}
 
-      <CreatePlaylists groups={state.groups} tracks={byKey} onDone={onSpotifyChanged} />
+      <CreatePlaylists
+        groups={state.groups}
+        tracks={byKey}
+        disabledReason={createDisabledReason}
+        onDone={onSpotifyChanged}
+      />
     </div>
   );
 }
