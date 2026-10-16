@@ -21,14 +21,18 @@ type TopTagsResponse = {
 };
 
 export async function getTopTags(params: Record<string, string>): Promise<ApiResult<Lookup>> {
-  const query = new URLSearchParams({ ...params, autocorrect: "1", format: "json" });
+  // encodeURIComponent so accents, emojis, quotes and slashes reach Last.fm intact
+  const encode = (p: Record<string, string>) =>
+    Object.entries(p)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+  const query = { ...params, autocorrect: "1", format: "json" };
   // URL shown on screen in error messages, so it must not carry the key
-  const shownUrl = `${API}?${query}`;
-  query.set("api_key", process.env.LASTFM_API_KEY ?? "");
+  const shownUrl = `${API}?${encode(query)}`;
 
   let res: Response;
   try {
-    res = await fetch(`${API}?${query}`, { cache: "no-store" });
+    res = await fetch(`${API}?${encode({ ...query, api_key: process.env.LASTFM_API_KEY ?? "" })}`, { cache: "no-store" });
   } catch (err) {
     return { ok: false, url: shownUrl, status: null, raw: `falha de rede: ${String(err)}` };
   }

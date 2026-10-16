@@ -6,6 +6,9 @@ import { getTopTags } from "@/lib/lastfm";
 
 const MAX_LEN = 300;
 
+// Trim and cut (by code point, so emojis aren't split) instead of rejecting long input
+const clean = (s: string | null) => Array.from((s ?? "").trim()).slice(0, MAX_LEN).join("");
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.accessToken || session.error) {
@@ -16,10 +19,12 @@ export async function GET(req: Request) {
   }
 
   const params = new URL(req.url).searchParams;
-  const artist = params.get("artist")?.trim() ?? "";
-  const track = params.get("track")?.trim() ?? "";
-  if (!artist || artist.length > MAX_LEN || track.length > MAX_LEN) {
-    return Response.json({ ok: false, url: "/api/lastfm", status: 400, raw: "Parâmetros inválidos." }, { status: 400 });
+  const artist = clean(params.get("artist"));
+  const track = clean(params.get("track"));
+  // Last.fm can't look anything up without an artist (Spotify returns "" for unavailable tracks)
+  if (!artist) {
+    console.warn("[lastfm] rejected: empty artist", JSON.stringify({ artist: params.get("artist"), track: params.get("track") }));
+    return Response.json({ ok: false, url: "/api/lastfm", status: 400, raw: "Artista vazio." }, { status: 400 });
   }
 
   const result = track

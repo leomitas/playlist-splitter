@@ -43,6 +43,10 @@ export function AnalysisPanel({
   const currentFraction = run.current?.total ? run.current.done / run.current.total : 0;
   const reading = run.items.find((i) => i.status === "analisando");
   const skipped = run.items.flatMap((i) => (i.skipped ?? []).map((s) => ({ ...s, source: i.name })));
+  const untagged = run.items.flatMap((i) => (i.untagged ?? []).map((u) => ({ ...u, source: i.name })));
+  const untaggedGroups = (["entrada inválida", "erro do Last.fm"] as const)
+    .map((reason) => ({ reason, list: untagged.filter((u) => u.reason === reason) }))
+    .filter((g) => g.list.length > 0);
   // "1.850 de 4.344" while reading, so long sources (liked songs) visibly progress
   const progressText = (c: NonNullable<Run["current"]>) =>
     `${fmt(c.done)}${c.total ? ` de ${fmt(c.total)}` : ""}`;
@@ -92,6 +96,21 @@ export function AnalysisPanel({
           </ul>
         </details>
       )}
+      {untaggedGroups.map((g) => (
+        <details key={g.reason} className="rounded bg-yellow-50 p-2 text-xs">
+          <summary className="cursor-pointer font-medium text-yellow-900">
+            {fmt(g.list.length)} {g.list.length === 1 ? "faixa sem tags" : "faixas sem tags"} por {g.reason}
+          </summary>
+          <ul className="mt-1 flex max-h-60 flex-col gap-0.5 overflow-auto">
+            {g.list.map((u, idx) => (
+              <li key={idx}>
+                {u.source}: {u.name || "(sem nome)"} — {u.artist || "(sem artista)"}{" "}
+                <span className="text-gray-500">({u.detail})</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
       {failed > 0 && (
         <div className="flex flex-col gap-2 rounded bg-red-50 p-2">
           <p className="text-xs font-medium text-red-700">

@@ -24,10 +24,23 @@ export type RunItem = {
   errorCount?: number;
   // items the Spotify API kept failing on (5xx), skipped so the rest could be read
   skipped?: SkippedItem[];
+  // tracks classified without tags because their Last.fm lookup failed or was impossible
+  untagged?: UntaggedTrack[];
   // for the time estimate: how long the playlist took and how many tracks it had
   ms?: number;
   trackCount?: number;
 };
+
+export type UntaggedTrack = {
+  name: string;
+  artist: string;
+  reason: "entrada inválida" | "erro do Last.fm";
+  detail: string;
+};
+
+// 4xx = the input itself is the problem; 429 (after retries), 5xx and network = Last.fm trouble
+const lookupFailureReason = (e: ApiError): UntaggedTrack["reason"] =>
+  e.status !== null && e.status >= 400 && e.status < 500 && e.status !== 429 ? "entrada inválida" : "erro do Last.fm";
 
 export type RunPhase = "running" | "paused" | "done" | "cancelled";
 
@@ -87,7 +100,7 @@ async function analyzePlaylist(item: RunItem, gen: number) {
   const stale = () => gen !== generation;
   const started = Date.now();
 
-  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined, skipped: undefined });
+  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined, skipped: undefined, untagged: undefined });
   set({ ...run!, current: { step: "faixas", done: 0, total: item.total } });
 
   const read = await loadTracks(
@@ -114,23 +127,43 @@ async function analyzePlaylist(item: RunItem, gen: number) {
     fresh.push(t);
   }
 
-  const errors: ApiError[] = [];
+  // Per-track Last.fm failures never fail the playlist; only a lost session does
+  // (every lookup would fail, so continuing would just mark everything "sem tags")
+  let fatal: ApiError | null = null;
+  const untagged: UntaggedTrack[] = [];
+  const noteFailure = (t: PlaylistTrack, e: ApiError, what: "artista" | "faixa") => {
+    if (e.status === 401) fatal ??= e;
+    else
+      untagged.push({
+        name: t.name,
+        artist: t.artists[0] ?? "",
+        reason: lookupFailureReason(e),
+        detail: `${what}: ${e.status ?? "sem resposta"} ${e.raw}`.slice(0, 300),
+      });
+  };
   let done = 0;
   set({ ...run!, current: { step: "gêneros", done: 0, total: fresh.length } });
 
   const classified = await Promise.all(
     fresh.map(async (t) => {
-      const artist = t.artists[0];
-      const a = await getArtistTags(artist, stop);
-      if (!a.ok) errors.push(a);
-      const artistTags: Lookup | null = a.ok ? a.data : null;
-
-      // track tags only when the artist's tags don't already give a family
+      const artist = (t.artists[0] ?? "").trim();
+      let artistTags: Lookup | null = null;
       let trackTags: Lookup | null = null;
-      if (a.ok && !hasFamilyTag(artistTags)) {
-        const tr = await getTrackTags(artist, t.name, stop);
-        if (tr.ok) trackTags = tr.data;
-        else errors.push(tr);
+
+      if (!artist) {
+        // Spotify returns name "" and artist "" for unavailable tracks; nothing to look up
+        untagged.push({ name: t.name, artist: "", reason: "entrada inválida", detail: "artista vazio" });
+      } else {
+        const a = await getArtistTags(artist, stop);
+        if (a.ok) artistTags = a.data;
+        else noteFailure(t, a, "artista");
+
+        // track tags only when the artist's tags don't already give a family
+        if (a.ok && !hasFamilyTag(artistTags) && t.name.trim()) {
+          const tr = await getTrackTags(artist, t.name.trim(), stop);
+          if (tr.ok) trackTags = tr.data;
+          else noteFailure(t, tr, "faixa");
+        }
       }
 
       done++;
@@ -140,9 +173,9 @@ async function analyzePlaylist(item: RunItem, gen: number) {
   );
   if (stale()) return;
 
-  if (errors.length > 0) {
+  if (fatal) {
     // nothing from this playlist is added; successful lookups are cached, so a retry is cheap
-    patchItem(item.id, { status: "erro", error: errors[0], errorCount: errors.length });
+    patchItem(item.id, { status: "erro", error: fatal, errorCount: 1 });
   } else {
     set({ ...run!, tracks: [...run!.tracks, ...classified], totalTracks: run!.totalTracks + read.data.tracks.length });
     patchItem(item.id, {
@@ -150,6 +183,7 @@ async function analyzePlaylist(item: RunItem, gen: number) {
       ms: Date.now() - started,
       trackCount: read.data.tracks.length,
       skipped: read.data.skipped,
+      untagged,
     });
   }
   set({ ...run!, current: undefined });
