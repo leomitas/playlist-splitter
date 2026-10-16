@@ -17,7 +17,7 @@ const STATUS_STYLE: Record<ItemStatus, string> = {
 
 const fmt = (n: number) => n.toLocaleString("pt-BR");
 
-function formatEta(ms: number) {
+export function formatEta(ms: number) {
   const min = Math.round(ms / 60000);
   return min < 1 ? "menos de 1 min restante" : `~${fmt(min)} min restantes`;
 }
@@ -135,8 +135,9 @@ export function AnalysisPanel({
         </div>
       )}
 
-      <RateLimitNotice queue={spotify} service="Spotify" />
-      <RateLimitNotice queue={lastfm} service="Last.fm" />
+      {/* only while analyzing; playlist creation shows its own notice */}
+      {active && <RateLimitNotice queue={spotify} service="Spotify" />}
+      {active && <RateLimitNotice queue={lastfm} service="Last.fm" />}
 
       {active && (
         <div className="flex gap-2">

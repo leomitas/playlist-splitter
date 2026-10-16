@@ -7,13 +7,15 @@ import type { Group } from "@/lib/preview-state";
 import type { ApiError, ApiResult } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
+import { formatEta } from "./analysis-panel";
+import { RateLimitNotice } from "./rate-limit-notice";
 import { invalidatePlaylists, loadMe, loadPlaylists, loadTracks } from "./spotify-data";
 
 type Mode = "update" | "create";
 
 type Progress = {
   status:
-    | "pendente"
+    | "aguardando"
     | "criando"
     | "adicionando"
     | "criada"
@@ -24,9 +26,14 @@ type Progress = {
   batch?: number;
   totalBatches?: number;
   added: number;
+  // tracks this playlist will receive
+  total: number;
   url?: string;
   error?: ApiError;
 };
+
+// Write calls (create + add batches) across the whole run, for the global bar and the ETA
+type CallStats = { done: number; total: number; etaMs: number | null };
 
 type ExistingMatch = {
   playlistId: string;
@@ -95,6 +102,10 @@ export function CreatePlaylists({
   const [modes, setModes] = useState<Record<string, Mode>>({});
   const [isPublic, setIsPublic] = useState(false);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
+  // group ids in execution order, and the index of the one being processed
+  const [order, setOrder] = useState<string[]>([]);
+  const [current, setCurrent] = useState(0);
+  const [calls, setCalls] = useState<CallStats>({ done: 0, total: 0, etaMs: null });
   // state updates are async; the ref blocks a second click landing before re-render
   const running = useRef(false);
 
@@ -113,7 +124,7 @@ export function CreatePlaylists({
     setPhase("confirm");
   }
 
-  async function addInBatches(groupId: string, playlistId: string, uris: string[]) {
+  async function addInBatches(groupId: string, playlistId: string, uris: string[], onCall: () => void) {
     const batches = chunk(uris);
     let added = 0;
     for (let i = 0; i < batches.length; i++) {
@@ -121,6 +132,7 @@ export function CreatePlaylists({
       const r = await spotify.call(() => addTracks(playlistId, batches[i]), `/playlists/${playlistId}/items`);
       if (!r.ok) return { added, error: r };
       added += batches[i].length;
+      onCall();
       update(groupId, { added });
     }
     return { added, error: undefined };
@@ -129,23 +141,59 @@ export function CreatePlaylists({
   async function run() {
     if (running.current) return;
     running.current = true;
-    setPhase("running");
-    setProgress(Object.fromEntries(plan.map((p) => [p.groupId, { status: "pendente", added: 0 } as Progress])));
 
-    for (const p of plan) {
-      const match = existing[p.groupId];
-      if (modes[p.groupId] === "update" && match) {
+    // Smallest first, so the first playlists are ready quickly. Uses the existing-playlist
+    // lookup made when the confirmation opened; the playlist list isn't fetched again.
+    const jobs = plan
+      .map((p) => {
+        const match = modes[p.groupId] === "update" ? existing[p.groupId] : null;
+        const uris = match ? match.newUris : p.uris;
+        const create = !match && uris.length > 0;
+        return { p, match, uris, calls: (create ? 1 : 0) + chunk(uris).length };
+      })
+      .sort((a, b) => a.uris.length - b.uris.length);
+
+    let total = jobs.reduce((n, j) => n + j.calls, 0);
+    let done = 0;
+    const startedAt = Date.now();
+    // ETA from the average time per write call so far, rate-limit waits included
+    const publish = () =>
+      setCalls({ done, total, etaMs: done === 0 ? null : ((Date.now() - startedAt) / done) * (total - done) });
+
+    setOrder(jobs.map((j) => j.p.groupId));
+    setCurrent(0);
+    setCalls({ done: 0, total, etaMs: null });
+    setProgress(
+      Object.fromEntries(jobs.map((j) => [j.p.groupId, { status: "aguardando", added: 0, total: j.uris.length } as Progress])),
+    );
+    setPhase("running");
+
+    for (const [i, { p, match, uris, calls: planned }] of jobs.entries()) {
+      setCurrent(i);
+      const before = done;
+      const onCall = () => {
+        done++;
+        publish();
+      };
+      // calls a failed playlist won't make anymore leave the total, so the bar still reaches the end
+      const settle = () => {
+        total -= planned - (done - before);
+        publish();
+      };
+
+      if (match) {
         update(p.groupId, { url: match.url });
-        if (match.newUris.length === 0) {
+        if (uris.length === 0) {
           update(p.groupId, { status: "nada novo" });
           continue;
         }
-        const { added, error } = await addInBatches(p.groupId, match.playlistId, match.newUris);
+        const { added, error } = await addInBatches(p.groupId, match.playlistId, uris, onCall);
         update(p.groupId, error ? { status: "erro", error, added } : { status: "atualizada", added });
+        settle();
         continue;
       }
 
-      if (p.uris.length === 0) {
+      if (uris.length === 0) {
         update(p.groupId, { status: "não criada" });
         continue;
       }
@@ -153,11 +201,14 @@ export function CreatePlaylists({
       const created = await spotify.call(() => createPlaylist(p.name, isPublic), "/me/playlists");
       if (!created.ok) {
         update(p.groupId, { status: "erro", error: created });
+        settle();
         continue;
       }
+      onCall();
       update(p.groupId, { url: created.data.url });
-      const { added, error } = await addInBatches(p.groupId, created.data.id, p.uris);
+      const { added, error } = await addInBatches(p.groupId, created.data.id, uris, onCall);
       update(p.groupId, error ? { status: "erro", error, added } : { status: "criada", added });
+      settle();
     }
 
     // stays disabled after finishing so the same playlists aren't created twice by accident
@@ -166,12 +217,44 @@ export function CreatePlaylists({
     onDone();
   }
 
+  const fmt = (n: number) => n.toLocaleString("pt-BR");
   const statusLabel = (pr: Progress) =>
     pr.status === "adicionando"
-      ? `adicionando lote ${pr.batch}/${pr.totalBatches}`
-      : pr.status === "atualizada"
-        ? `atualizada (+${pr.added} faixas)`
-        : pr.status;
+      ? `adicionando ${fmt(pr.added)}/${fmt(pr.total)}`
+      : pr.status === "criada"
+        ? `concluída · criada com ${fmt(pr.added)} faixas`
+        : pr.status === "atualizada"
+          ? `concluída · atualizada (+${fmt(pr.added)} faixas)`
+          : pr.status === "nada novo"
+            ? "concluída · nada novo"
+            : pr.status;
+  const STATUS_STYLE: Partial<Record<Progress["status"], string>> = {
+    aguardando: "text-gray-500",
+    criando: "text-blue-700",
+    adicionando: "text-blue-700",
+    criada: "text-green-700",
+    atualizada: "text-green-700",
+    "nada novo": "text-green-700",
+    erro: "text-red-700",
+  };
+
+  const byGroup = new Map(plan.map((p) => [p.groupId, p]));
+  const currentProgress = progress[order[current]];
+  const percent = calls.total === 0 ? (phase === "done" ? 100 : 0) : Math.min(100, (calls.done / calls.total) * 100);
+  const doneCount = Object.values(progress).filter(
+    (pr) => pr.status !== "aguardando" && pr.status !== "criando" && pr.status !== "adicionando",
+  ).length;
+  const failedCount = Object.values(progress).filter((pr) => pr.status === "erro").length;
+  const head =
+    phase === "done"
+      ? `Concluído: ${fmt(doneCount - failedCount)} de ${fmt(order.length)} playlists${failedCount ? ` · ${fmt(failedCount)} com erro` : ""}`
+      : [
+          `Playlist ${fmt(Math.min(current + 1, order.length))} de ${fmt(order.length)}`,
+          currentProgress?.status === "adicionando" && `lote ${currentProgress.batch}/${currentProgress.totalBatches}`,
+          calls.etaMs !== null && formatEta(calls.etaMs),
+        ]
+          .filter(Boolean)
+          .join(" · ");
 
   return (
     <div className="flex flex-col gap-3 rounded border p-3">
@@ -186,6 +269,7 @@ export function CreatePlaylists({
       )}
 
       {phase === "checking" && <p>Verificando playlists já criadas pelo Playlist Splitter…</p>}
+      {(phase === "checking" || phase === "running") && <RateLimitNotice queue={spotify} service="Spotify" />}
 
       {phase === "confirm" && (
         <div className="flex flex-col gap-2">
@@ -258,15 +342,19 @@ export function CreatePlaylists({
 
       {(phase === "running" || phase === "done") && (
         <div className="flex flex-col gap-2">
-          <p className="font-semibold">{phase === "running" ? "Processando…" : "Resumo"}</p>
+          <p className="font-semibold">{head}</p>
+          <div className="h-2 w-full overflow-hidden rounded bg-gray-200" role="progressbar" aria-valuenow={Math.round(percent)}>
+            <div className="h-full bg-green-600 transition-all" style={{ width: `${percent}%` }} />
+          </div>
           <ul className="flex flex-col gap-2">
-            {plan.map((p) => {
-              const pr = progress[p.groupId];
-              if (!pr) return null;
+            {order.map((id) => {
+              const p = byGroup.get(id);
+              const pr = progress[id];
+              if (!p || !pr) return null;
               return (
                 <li key={p.groupId} className={pr.status === "erro" ? "rounded bg-red-50 p-2" : ""}>
                   <p>
-                    <strong>{p.name}</strong> — {statusLabel(pr)}
+                    <strong>{p.name}</strong> — <span className={STATUS_STYLE[pr.status]}>{statusLabel(pr)}</span>
                   </p>
                   {phase === "done" && (
                     <p className="text-xs text-gray-600">
