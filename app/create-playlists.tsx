@@ -58,7 +58,7 @@ async function findExisting(planned: PlannedPlaylist[]): Promise<ApiResult<Recor
       url: `https://open.spotify.com/playlist/${found[0].id}`,
       newUris: missingUris(
         p.uris.filter((u) => TRACK_URI.test(u)),
-        existing.data.map((t) => t.uri).filter((u): u is string => !!u),
+        existing.data.tracks.map((t) => t.uri).filter((u): u is string => !!u),
       ),
       matches: found.length,
     };

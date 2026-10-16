@@ -19,7 +19,9 @@ export function RateLimitNotice({ queue, service }: { queue: Queue; service: str
   const seconds = Math.max(0, Math.ceil((state.retryAt - now) / 1000));
   return (
     <p className="rounded-md border border-yellow-400 bg-yellow-50 p-2 text-sm text-yellow-900">
-      {service} limitou as requisições, retomando em {seconds}s
+      {state.status === 429
+        ? `${service} limitou as requisições, retomando em ${seconds}s`
+        : `${service} instável (${state.status === null ? "falha de rede" : `erro ${state.status}`}), tentando de novo em ${seconds}s`}
     </p>
   );
 }

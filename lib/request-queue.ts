@@ -12,7 +12,8 @@ type Options = {
   sleep: (ms: number) => Promise<void>;
 };
 
-export type RateLimitState = { retryAt: number } | null;
+// status: the HTTP status that caused the wait (429 = rate limit, 5xx = server trouble)
+export type RateLimitState = { retryAt: number; status: number | null } | null;
 
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -80,7 +81,7 @@ export function createRequestQueue(overrides: Partial<Options> = {}) {
       // Retry-After (at least minWaitS), never shorter than the exponential backoff
       const waitS = Math.max(r.retryAfter ?? 0, o.minWaitS, o.minWaitS * 2 ** attempt);
       pausedUntil = Math.max(pausedUntil, Date.now() + waitS * 1000);
-      setRateLimit({ retryAt: pausedUntil });
+      setRateLimit({ retryAt: pausedUntil, status: r.status });
       await o.sleep(waitS * 1000);
       if (Date.now() >= pausedUntil) setRateLimit(null);
     }

@@ -40,7 +40,18 @@ export function AnalysisPanel({
   const finished = run.items.filter((i) => i.status !== "pendente" && i.status !== "analisando").length;
   const failed = run.items.filter((i) => i.status === "erro").length;
   const active = run.phase === "running" || run.phase === "paused";
-  const currentFraction = run.current && run.current.total > 0 ? run.current.done / run.current.total : 0;
+  const currentFraction = run.current?.total ? run.current.done / run.current.total : 0;
+  const reading = run.items.find((i) => i.status === "analisando");
+  const skipped = run.items.flatMap((i) => (i.skipped ?? []).map((s) => ({ ...s, source: i.name })));
+  // "1.850 de 4.344" while reading, so long sources (liked songs) visibly progress
+  const progressText = (c: NonNullable<Run["current"]>) =>
+    `${fmt(c.done)}${c.total ? ` de ${fmt(c.total)}` : ""}`;
+  const statusText = (i: Run["items"][number]) =>
+    i.status === "analisando" && run.current
+      ? `${run.current.step === "faixas" ? "lendo" : "gêneros"} ${progressText(run.current)}`
+      : i.status === "concluída" && i.skipped?.length
+        ? `concluída com ${fmt(i.skipped.length)} ${i.skipped.length === 1 ? "faixa pulada" : "faixas puladas"}`
+        : i.status;
   const percent = total === 0 ? 0 : Math.min(100, ((finished + (run.current ? currentFraction : 0)) / total) * 100);
   const eta = run.phase === "running" ? estimateRemainingMs(run) : null;
 
@@ -61,11 +72,25 @@ export function AnalysisPanel({
       <div className="h-2 w-full overflow-hidden rounded bg-gray-200" role="progressbar" aria-valuenow={Math.round(percent)}>
         <div className="h-full bg-green-600 transition-all" style={{ width: `${percent}%` }} />
       </div>
-      {run.current && (
+      {run.current && reading && (
         <p className="text-xs text-gray-600">
-          {run.current.step === "faixas" ? "Lendo faixas" : "Buscando gêneros"}: {fmt(run.current.done)}
-          {run.current.total > 0 && ` de ${fmt(run.current.total)}`}
+          {reading.name}: {run.current.step === "faixas" ? "lendo faixas" : "buscando gêneros"} {progressText(run.current)}
         </p>
+      )}
+      {skipped.length > 0 && (
+        <details className="rounded bg-yellow-50 p-2 text-xs">
+          <summary className="cursor-pointer font-medium text-yellow-900">
+            {fmt(skipped.length)} {skipped.length === 1 ? "faixa pulada" : "faixas puladas"} por erro do Spotify
+          </summary>
+          <ul className="mt-1 flex max-h-60 flex-col gap-0.5 overflow-auto">
+            {skipped.map((s) => (
+              <li key={`${s.source}:${s.offset}`}>
+                {s.source}: posição {fmt(s.offset + 1)}
+                {s.after ? ` (depois de «${s.after}»)` : " (início da lista)"}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {failed > 0 && (
         <div className="flex flex-col gap-2 rounded bg-red-50 p-2">
@@ -121,7 +146,7 @@ export function AnalysisPanel({
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate">{i.name}</span>
                 <span className={STATUS_STYLE[i.status]}>
-                  {i.status}
+                  {statusText(i)}
                   {i.status === "erro" && i.errorCount && i.errorCount > 1 && ` (${fmt(i.errorCount)} falhas)`}
                 </span>
                 {(i.status === "erro" || i.status === "cancelada") && (

@@ -10,6 +10,7 @@ import {
   getLikedSummary,
   getLikedTracksPage,
   getPlaylistTracksPage,
+  PAGE_SIZE,
   spotifyGet,
   spotifyPost,
   type ApiResult,
@@ -17,6 +18,9 @@ import {
 } from "@/lib/spotify";
 
 const SPOTIFY_ID = /^[A-Za-z0-9]+$/;
+
+// smaller pages are used to isolate an item the API keeps failing on
+const pageLimit = (limit: number) => Math.min(PAGE_SIZE, Math.max(1, Math.floor(limit) || PAGE_SIZE));
 
 async function token(): Promise<string | null> {
   const session = await auth();
@@ -41,12 +45,12 @@ export async function getMyPlaylistsPage(offset: number) {
   return getPlaylistsPage(Math.max(0, Math.floor(offset)), t);
 }
 
-export async function getTracksPage(playlistId: string, offset: number) {
+export async function getTracksPage(playlistId: string, offset: number, limit = PAGE_SIZE) {
   const url = `/playlists/${playlistId}/items`;
   const t = await token();
   if (!t) return notAuthenticated("GET", url);
   if (!SPOTIFY_ID.test(playlistId)) return fail("GET", url, null, "ID de playlist inválido.");
-  return getPlaylistTracksPage(playlistId, Math.max(0, Math.floor(offset)), t);
+  return getPlaylistTracksPage(playlistId, Math.max(0, Math.floor(offset)), t, pageLimit(limit));
 }
 
 // Read-only: liked songs are never modified
@@ -56,10 +60,10 @@ export async function getLikedSummaryAction() {
   return getLikedSummary(t);
 }
 
-export async function getLikedPage(offset: number) {
+export async function getLikedPage(offset: number, limit = PAGE_SIZE) {
   const t = await token();
   if (!t) return notAuthenticated("GET", "/me/tracks");
-  return getLikedTracksPage(Math.max(0, Math.floor(offset)), t);
+  return getLikedTracksPage(Math.max(0, Math.floor(offset)), t, pageLimit(limit));
 }
 
 export async function createPlaylist(

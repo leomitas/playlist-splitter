@@ -6,6 +6,7 @@ import { classifyTrack, hasFamilyTag, type ClassifiedTrack } from "@/lib/classif
 import { idbClear, idbGet, idbSet } from "@/lib/idb";
 import { getArtistTags, getTrackTags } from "@/lib/lastfm-client";
 import type { Lookup } from "@/lib/lastfm";
+import type { SkippedItem } from "@/lib/paged-reader";
 import type { ApiError, Playlist, PlaylistTrack } from "@/lib/spotify";
 import { clearSessionCache } from "@/lib/spotify-cache";
 import { loadTracks } from "./spotify-data";
@@ -21,6 +22,8 @@ export type RunItem = {
   status: ItemStatus;
   error?: ApiError;
   errorCount?: number;
+  // items the Spotify API kept failing on (5xx), skipped so the rest could be read
+  skipped?: SkippedItem[];
   // for the time estimate: how long the playlist took and how many tracks it had
   ms?: number;
   trackCount?: number;
@@ -37,7 +40,7 @@ export type Run = {
   // all tracks read, duplicates included
   totalTracks: number;
   // progress inside the playlist being analyzed (not persisted)
-  current?: { step: "faixas" | "gêneros"; done: number; total: number };
+  current?: { step: "faixas" | "gêneros"; done: number; total: number | null };
 };
 
 const RUN_KEY = "run";
@@ -84,11 +87,11 @@ async function analyzePlaylist(item: RunItem, gen: number) {
   const stale = () => gen !== generation;
   const started = Date.now();
 
-  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined });
-  set({ ...run!, current: { step: "faixas", done: 0, total: item.total ?? 0 } });
+  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined, skipped: undefined });
+  set({ ...run!, current: { step: "faixas", done: 0, total: item.total } });
 
   const read = await loadTracks(
-    { id: item.id, snapshot_id: item.snapshotId },
+    { id: item.id, snapshot_id: item.snapshotId, total: item.total },
     {
       checkpoint: stop,
       onProgress: (done, total) => !stale() && set({ ...run!, current: { step: "faixas", done, total } }),
@@ -105,7 +108,7 @@ async function analyzePlaylist(item: RunItem, gen: number) {
   // dedupe within the playlist and against everything already analyzed
   const seen = new Set(run!.tracks.map((t) => t.key));
   const fresh: PlaylistTrack[] = [];
-  for (const t of read.data) {
+  for (const t of read.data.tracks) {
     if (seen.has(t.key)) continue;
     seen.add(t.key);
     fresh.push(t);
@@ -141,8 +144,13 @@ async function analyzePlaylist(item: RunItem, gen: number) {
     // nothing from this playlist is added; successful lookups are cached, so a retry is cheap
     patchItem(item.id, { status: "erro", error: errors[0], errorCount: errors.length });
   } else {
-    set({ ...run!, tracks: [...run!.tracks, ...classified], totalTracks: run!.totalTracks + read.data.length });
-    patchItem(item.id, { status: "concluída", ms: Date.now() - started, trackCount: read.data.length });
+    set({ ...run!, tracks: [...run!.tracks, ...classified], totalTracks: run!.totalTracks + read.data.tracks.length });
+    patchItem(item.id, {
+      status: "concluída",
+      ms: Date.now() - started,
+      trackCount: read.data.tracks.length,
+      skipped: read.data.skipped,
+    });
   }
   set({ ...run!, current: undefined });
   persist();

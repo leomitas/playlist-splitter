@@ -2,7 +2,7 @@
 // Queueing, 429 retries and caching live in the browser (lib/spotify-client.ts).
 
 const API = "https://api.spotify.com/v1";
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 
 export type SpotifyImage = { url: string };
 export type Me = {
@@ -93,9 +93,10 @@ async function getPage<T, R>(
   offset: number,
   token: string,
   map: (items: T[]) => R[],
+  limit = PAGE_SIZE,
 ): Promise<ApiResult<PageResult<R>>> {
   const sep = path.includes("?") ? "&" : "?";
-  const r = await spotifyGet<Page<T>>(`${path}${sep}limit=${PAGE_SIZE}&offset=${offset}`, token);
+  const r = await spotifyGet<Page<T>>(`${path}${sep}limit=${limit}&offset=${offset}`, token);
   if (!r.ok) return r;
   const next = offset + r.data.items.length;
   return {
@@ -126,19 +127,20 @@ const toPlaylistTracks = (items: PlaylistItem[]): PlaylistTrack[] =>
       artists: t.artists.map((a) => a.name),
     }));
 
-export const getPlaylistTracksPage = (playlistId: string, offset: number, token: string) =>
+export const getPlaylistTracksPage = (playlistId: string, offset: number, token: string, limit = PAGE_SIZE) =>
   getPage<PlaylistItem, PlaylistTrack>(
     `/playlists/${playlistId}/items?additional_types=track`,
     offset,
     token,
     toPlaylistTracks,
+    limit,
   );
 
 // Liked songs behave like a playlist with this id in the UI and the analysis queue
 export const LIKED_ID = "liked";
 
-export const getLikedTracksPage = (offset: number, token: string) =>
-  getPage<PlaylistItem, PlaylistTrack>("/me/tracks", offset, token, toPlaylistTracks);
+export const getLikedTracksPage = (offset: number, token: string, limit = PAGE_SIZE) =>
+  getPage<PlaylistItem, PlaylistTrack>("/me/tracks", offset, token, toPlaylistTracks, limit);
 
 export type LikedSummary = { total: number; firstAddedAt: string | null };
 
