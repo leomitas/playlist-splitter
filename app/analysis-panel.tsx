@@ -67,7 +67,29 @@ export function AnalysisPanel({
           {run.current.total > 0 && ` de ${fmt(run.current.total)}`}
         </p>
       )}
-      {failed > 0 && <p className="text-xs text-red-700">{fmt(failed)} playlists com erro (veja a lista abaixo)</p>}
+      {failed > 0 && (
+        <div className="flex flex-col gap-2 rounded bg-red-50 p-2">
+          <p className="text-xs font-medium text-red-700">
+            {fmt(failed)} de {fmt(total)} {failed === 1 ? "playlist com erro" : "playlists com erro"}
+          </p>
+          {run.items
+            .filter((i) => i.status === "erro")
+            .map((i) => (
+              <div key={i.id} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium">{i.name}</span>
+                  {i.errorCount && i.errorCount > 1 && (
+                    <span className="text-xs text-red-700">{fmt(i.errorCount)} falhas</span>
+                  )}
+                  <button className="rounded border bg-white px-2 text-xs hover:bg-gray-100" onClick={() => onReprocess(i.id)}>
+                    Reprocessar
+                  </button>
+                </div>
+                {i.error && <RawError error={i.error} />}
+              </div>
+            ))}
+        </div>
+      )}
 
       <RateLimitNotice queue={spotify} service="Spotify" />
       <RateLimitNotice queue={lastfm} service="Last.fm" />
@@ -108,7 +130,6 @@ export function AnalysisPanel({
                   </button>
                 )}
               </div>
-              {i.error && <RawError error={i.error} />}
             </li>
           ))}
         </ul>

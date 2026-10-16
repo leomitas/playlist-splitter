@@ -7,6 +7,8 @@ import { auth } from "@/auth";
 import { BATCH_SIZE, DESCRIPTION, TRACK_URI } from "@/lib/playlist-plan";
 import {
   getPlaylistsPage,
+  getLikedSummary,
+  getLikedTracksPage,
   getPlaylistTracksPage,
   spotifyGet,
   spotifyPost,
@@ -45,6 +47,19 @@ export async function getTracksPage(playlistId: string, offset: number) {
   if (!t) return notAuthenticated("GET", url);
   if (!SPOTIFY_ID.test(playlistId)) return fail("GET", url, null, "ID de playlist inválido.");
   return getPlaylistTracksPage(playlistId, Math.max(0, Math.floor(offset)), t);
+}
+
+// Read-only: liked songs are never modified
+export async function getLikedSummaryAction() {
+  const t = await token();
+  if (!t) return notAuthenticated("GET", "/me/tracks");
+  return getLikedSummary(t);
+}
+
+export async function getLikedPage(offset: number) {
+  const t = await token();
+  if (!t) return notAuthenticated("GET", "/me/tracks");
+  return getLikedTracksPage(Math.max(0, Math.floor(offset)), t);
 }
 
 export async function createPlaylist(

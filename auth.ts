@@ -7,6 +7,7 @@ const SCOPES = [
   "playlist-read-collaborative",
   "playlist-modify-public",
   "playlist-modify-private",
+  "user-library-read",
 ].join(" ");
 
 declare module "next-auth" {

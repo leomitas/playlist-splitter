@@ -113,23 +113,41 @@ export const getPlaylistsPage = (offset: number, token: string) =>
     items.filter((p): p is Playlist => !!p),
   );
 
+// Shared by playlists and liked songs: skips missing tracks, episodes and artist-less items
+const toPlaylistTracks = (items: PlaylistItem[]): PlaylistTrack[] =>
+  items
+    .map((i) => i.item ?? i.track)
+    .filter((t): t is Track => !!t && (t.type ?? "track") === "track" && t.artists.length > 0)
+    .map((t) => ({
+      // local files have no id
+      key: t.id ?? `local:${t.artists[0].name}|${t.name}`.toLowerCase(),
+      uri: t.uri ?? null,
+      name: t.name,
+      artists: t.artists.map((a) => a.name),
+    }));
+
 export const getPlaylistTracksPage = (playlistId: string, offset: number, token: string) =>
   getPage<PlaylistItem, PlaylistTrack>(
     `/playlists/${playlistId}/items?additional_types=track`,
     offset,
     token,
-    (items) =>
-      items
-        .map((i) => i.item ?? i.track)
-        .filter((t): t is Track => !!t && (t.type ?? "track") === "track" && t.artists.length > 0)
-        .map((t) => ({
-          // local files have no id
-          key: t.id ?? `local:${t.artists[0].name}|${t.name}`.toLowerCase(),
-          uri: t.uri ?? null,
-          name: t.name,
-          artists: t.artists.map((a) => a.name),
-        })),
+    toPlaylistTracks,
   );
+
+// Liked songs behave like a playlist with this id in the UI and the analysis queue
+export const LIKED_ID = "liked";
+
+export const getLikedTracksPage = (offset: number, token: string) =>
+  getPage<PlaylistItem, PlaylistTrack>("/me/tracks", offset, token, toPlaylistTracks);
+
+export type LikedSummary = { total: number; firstAddedAt: string | null };
+
+// Liked songs have no snapshot_id; total + newest added_at stands in for it
+export async function getLikedSummary(token: string): Promise<ApiResult<LikedSummary>> {
+  const r = await spotifyGet<Page<{ added_at?: string }>>("/me/tracks?limit=1", token);
+  if (!r.ok) return r;
+  return { ok: true, data: { total: r.data.total, firstAddedAt: r.data.items[0]?.added_at ?? null } };
+}
 
 // The API only returns items for playlists the user owns or collaborates on
 export function isReadablePlaylist(p: Playlist | null, myId: string): p is Playlist {

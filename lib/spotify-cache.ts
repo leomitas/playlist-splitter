@@ -9,6 +9,7 @@ const mem = new Map<string, unknown>();
 export const cacheKeys = {
   me: `${PREFIX}me`,
   playlists: `${PREFIX}playlists`,
+  liked: `${PREFIX}liked`,
 };
 
 function storage(): Storage | null {

@@ -4,17 +4,19 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import Image from "next/image";
 import { markIncoherent } from "@/lib/classify";
 import { OTHER } from "@/lib/genre-families";
-import { isReadablePlaylist, type ApiResult, type Me, type Playlist } from "@/lib/spotify";
+import { isSplitterPlaylist } from "@/lib/playlist-plan";
+import { isReadablePlaylist, LIKED_ID, type ApiResult, type LikedSummary, type Me, type Playlist } from "@/lib/spotify";
 import { AnalysisPanel } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
 import { PlaylistPicker } from "./playlist-picker";
 import { Preview } from "./preview";
 import { RawError } from "./raw-error";
-import { loadMe, loadPlaylists } from "./spotify-data";
+import { likedAsPlaylist, loadLikedSummary, loadMe, loadPlaylists } from "./spotify-data";
 
 export function SpotifyApp() {
   const [me, setMe] = useState<ApiResult<Me> | null>(null);
   const [playlists, setPlaylists] = useState<ApiResult<Playlist[]> | null>(null);
+  const [liked, setLiked] = useState<ApiResult<LikedSummary> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // local state only: nothing in the URL, so a reload doesn't trigger any call by itself
   const [selected, setSelected] = useState<string[]>([]);
@@ -24,6 +26,7 @@ export function SpotifyApp() {
   const refreshPlaylists = useCallback(async (force: boolean) => {
     setRefreshing(true);
     setPlaylists(await loadPlaylists(force));
+    setLiked(await loadLikedSummary(force));
     setRefreshing(false);
   }, []);
 
@@ -45,8 +48,14 @@ export function SpotifyApp() {
   if (!me) return <p className="text-sm">Carregando perfil…</p>;
 
   // the API doesn't return items for playlists the user neither owns nor collaborates on
+  // liked songs first; playlists created by this app are left out so they aren't re-analyzed
   const readable =
-    me.ok && playlists?.ok ? playlists.data.filter((p) => isReadablePlaylist(p, me.data.id)) : [];
+    me.ok && playlists?.ok
+      ? [
+          ...(liked?.ok ? [likedAsPlaylist(liked.data, me.data)] : []),
+          ...playlists.data.filter((p) => isReadablePlaylist(p, me.data.id) && !isSplitterPlaylist(p, me.data.id)),
+        ]
+      : [];
   // drop selections that disappeared after "Atualizar lista"
   const chosen = readable.filter((p) => selected.includes(p.id));
   const active = run?.phase === "running" || run?.phase === "paused";
@@ -103,12 +112,23 @@ export function SpotifyApp() {
         ) : !me.ok ? (
           <p className="text-sm text-red-700">Sem o ID do usuário (erro acima) não dá para filtrar as playlists.</p>
         ) : (
-          <PlaylistPicker
-            playlists={readable.map((p) => ({ id: p.id, name: p.name }))}
-            selected={selected}
-            disabled={active}
-            onChange={setSelected}
-          />
+          <>
+            {liked && !liked.ok && (
+              <div className="flex flex-col gap-1 text-sm">
+                <p>Músicas curtidas: não foi possível ler (as outras playlists funcionam normalmente).</p>
+                <RawError error={liked} />
+              </div>
+            )}
+            <PlaylistPicker
+              playlists={readable.map((p) => ({
+                id: p.id,
+                name: liked?.ok && p.id === LIKED_ID ? `${p.name} (${liked.data.total.toLocaleString("pt-BR")})` : p.name,
+              }))}
+              selected={selected}
+              disabled={active}
+              onChange={setSelected}
+            />
+          </>
         )}
         <button
           className="self-start rounded-full bg-green-600 px-5 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-40"
@@ -127,7 +147,7 @@ export function SpotifyApp() {
         <AnalysisPanel
           run={run}
           onPause={analysis.pause}
-          onResume={() => analysis.resume(playlists?.ok ? playlists.data : [])}
+          onResume={() => analysis.resume(readable)}
           onCancel={analysis.cancel}
           onReprocess={analysis.reprocess}
         />

@@ -39,7 +39,7 @@ next.config.ts                       imagens remotas do Spotify (*.scdn.co, *.sp
   - A sessão expõe `accessToken` e `error`.
 - **Refresh:** automático no callback `jwt`, com margem de 60s antes de expirar.
   - Se o refresh falhar, `session.error = "RefreshTokenError"` e a UI pede login de novo.
-- **Scopes:** `user-read-email playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private`.
+- **Scopes:** `user-read-email playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read`.
 - **`route.ts` não usa `handlers` do next-auth.**
   - Motivo: o `NextRequest` reescreve `127.0.0.1` para `localhost`, e isso quebraria a redirect URI.
   - Solução: a rota monta um `Request` comum sobre `AUTH_URL` e chama o `Auth` do `@auth/core`.

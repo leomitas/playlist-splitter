@@ -42,15 +42,15 @@ function decodeEntities(s: string) {
     .replace(/&amp;/g, "&");
 }
 
+// Playlists this app created (owned by the user, with our description)
+export function isSplitterPlaylist(p: { owner: { id: string }; description?: string | null }, myId: string) {
+  return p.owner.id === myId && decodeEntities(p.description ?? "").trim() === DESCRIPTION;
+}
+
 export function findSplitterPlaylists<
   P extends { name: string; owner: { id: string }; description?: string | null },
 >(playlists: P[], myId: string, name: string): P[] {
-  return playlists.filter(
-    (p) =>
-      p.owner.id === myId &&
-      normalizeTitle(p.name) === normalizeTitle(name) &&
-      decodeEntities(p.description ?? "").trim() === DESCRIPTION,
-  );
+  return playlists.filter((p) => isSplitterPlaylist(p, myId) && normalizeTitle(p.name) === normalizeTitle(name));
 }
 
 // Keeps the group's order; existing tracks are never touched, only missing ones are added
