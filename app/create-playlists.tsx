@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { chunk, findSplitterPlaylists, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
 import type { Group } from "@/lib/preview-state";
@@ -8,6 +8,7 @@ import type { ApiError, ApiResult } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
+import { genreColor } from "./genre-colors";
 import { RateLimitNotice } from "./rate-limit-notice";
 import { invalidatePlaylists, loadMe, loadPlaylists, loadTracks } from "./spotify-data";
 
@@ -129,6 +130,9 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   const [order, setOrder] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
   const [calls, setCalls] = useState<CallStats>({ done: 0, total: 0, etaMs: null });
+  // the dialog can be hidden while running or done; the footer then shows the progress
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
   // state updates are async; the ref blocks a second click landing before re-render
   const running = useRef(false);
   const jobs = useRef<Job[]>([]);
@@ -144,10 +148,29 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 
   const publish = () => setCalls(readClock(stats.current));
 
+  useEffect(() => {
+    const d = dialog.current;
+    if (!d) return;
+    if (sheetOpen && !d.open) {
+      d.showModal();
+      // focus the dialog itself (announces its title), not the first scrollable area
+      d.focus();
+    }
+    if (!sheetOpen && d.open) d.close();
+  }, [sheetOpen, phase]);
+
+  // closing the confirmation cancels it; the check can't be interrupted; progress just hides
+  function closeSheet() {
+    if (phase === "checking") return;
+    if (phase === "confirm") setPhase("idle");
+    setSheetOpen(false);
+  }
+
   async function openConfirm() {
     const planned = planPlaylists(groups, tracks);
     setPlan(planned);
     setPhase("checking");
+    setSheetOpen(true);
     const r = await findExisting(planned);
     const found = r.ok ? r.data : {};
     setCheckError(r.ok ? null : r);
@@ -312,153 +335,326 @@ export const CreatePlaylists = memo(function CreatePlaylists({
           .filter(Boolean)
           .join(" · ");
 
-  if (phase === "idle") {
-    const n = outline.playlists;
-    return (
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-fio bg-grafite/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <p className="text-sm text-areia" aria-live="polite">
-            {disabledReason
-              ? "Os gêneros ainda podem mudar enquanto playlists são analisadas."
-              : n === 0
-                ? "Marque pelo menos um gênero para criar a playlist dele."
-                : "Você confere tudo antes de qualquer mudança no Spotify."}
-          </p>
-          <button
-            className="w-full rounded-full bg-papel px-6 py-3 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-            disabled={!!disabledReason || n === 0}
-            onClick={openConfirm}
-          >
-            {disabledReason ??
-              (n === 0
-                ? "Nenhum gênero marcado"
-                : `Criar ${n} ${n === 1 ? "playlist" : "playlists"} · ${outline.tracks.toLocaleString("pt-BR")} faixas`)}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const primary =
+    "rounded-full bg-papel px-6 py-3 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
+  const ghost = "rounded-full border border-fio px-5 py-2 transition-colors hover:border-areia hover:bg-grafite-2";
+  const busy = phase === "running" || phase === "checking";
 
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-fio bg-grafite p-4">
-
-      {phase === "checking" && <p>Verificando playlists já criadas pelo Playlist Splitter…</p>}
-      {(phase === "checking" || phase === "running") && <RateLimitNotice queue={spotify} service="Spotify" />}
-
-      {phase === "confirm" && (
-        <div className="flex flex-col gap-2">
-          <p className="font-semibold">Confirmar no Spotify</p>
-          {checkError && (
-            <div className="rounded bg-erro/10 p-2">
-              <p className="text-xs">
-                Não foi possível verificar playlists existentes; todas serão criadas como novas.
-              </p>
-              <RawError error={checkError} />
-            </div>
-          )}
-          <ul className="flex flex-col gap-2">
-            {plan.map((p) => {
-              const match = existing[p.groupId];
-              const mode = modes[p.groupId];
-              const setMode = (m: Mode) => setModes({ ...modes, [p.groupId]: m });
-              return (
-                <li key={p.groupId} className="rounded border border-fio p-2">
-                  <p>
-                    <strong>{p.name}</strong> — {p.uris.length} faixas
-                    {p.ignored > 0 && <span className="text-areia"> ({p.ignored} ignoradas: sem URI válida)</span>}
-                  </p>
-                  {match ? (
-                    <div className="flex flex-col text-xs">
-                      <label className="flex items-center gap-1">
-                        <input type="radio" checked={mode === "update"} onChange={() => setMode("update")} />
-                        {match.newUris.length > 0
-                          ? `Atualizar existente (+${match.newUris.length} novas)`
-                          : "Atualizar existente — nada novo para adicionar"}
-                        <a className="text-ok underline" href={match.url} target="_blank" rel="noreferrer">
-                          ver
-                        </a>
-                        {match.matches > 1 && (
-                          <span className="text-alerta">({match.matches} com esse nome; usando a primeira)</span>
-                        )}
-                      </label>
-                      <label className="flex items-center gap-1">
-                        <input type="radio" checked={mode === "create"} onChange={() => setMode("create")} />
-                        Criar nova ({isPublic ? "pública" : "privada"})
-                      </label>
-                    </div>
-                  ) : p.uris.length === 0 ? (
-                    <p className="text-xs text-erro">Não será criada (sem faixas válidas)</p>
-                  ) : (
-                    <p className="text-xs">Criar nova ({isPublic ? "pública" : "privada"})</p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-            Tornar públicas as playlists novas (padrão: privadas; as existentes não mudam)
-          </label>
-          <div className="flex gap-2">
+  // the page footer: the create button, or a compact progress line while the dialog is closed
+  const footer = (phase === "idle" || !sheetOpen) && (
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-fio bg-grafite/95 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+        {phase === "idle" ? (
+          <>
+            <p className="text-sm text-areia" aria-live="polite">
+              {disabledReason
+                ? "Os gêneros ainda podem mudar enquanto playlists são analisadas."
+                : outline.playlists === 0
+                  ? "Marque pelo menos um gênero para criar a playlist dele."
+                  : "Você confere tudo antes de qualquer mudança no Spotify."}
+            </p>
             <button
-              className="rounded-full bg-papel px-5 py-2 font-bold text-cafe hover:opacity-90 disabled:opacity-40"
-              disabled={!!disabledReason}
-              onClick={run}
+              className={`w-full sm:w-auto ${primary}`}
+              disabled={!!disabledReason || outline.playlists === 0}
+              onClick={openConfirm}
             >
-              {disabledReason ?? "Confirmar"}
+              {disabledReason ??
+                (outline.playlists === 0
+                  ? "Nenhum gênero marcado"
+                  : `Criar ${outline.playlists} ${outline.playlists === 1 ? "playlist" : "playlists"} · ${fmt(outline.tracks)} faixas`)}
             </button>
-            <button className="rounded-full border border-fio px-5 py-2 hover:bg-grafite-2" onClick={() => setPhase("idle")}>
-              Cancelar
+          </>
+        ) : (
+          <>
+            <div className="flex min-w-0 flex-1 flex-col gap-2" aria-live="polite">
+              <p className="truncate text-sm">{head}</p>
+              <ProgressBar percent={percent} />
+            </div>
+            <button className={ghost} onClick={() => setSheetOpen(true)}>
+              {phase === "done" ? "Ver resumo" : "Ver detalhes"}
             </button>
-          </div>
-        </div>
-      )}
-
-      {(phase === "running" || phase === "done") && (
-        <div className="flex flex-col gap-2">
-          <p className="font-semibold">{head}</p>
-          <div className="h-2 w-full overflow-hidden rounded bg-cafe" role="progressbar" aria-valuenow={Math.round(percent)}>
-            <div className="h-full bg-papel transition-all" style={{ width: `${percent}%` }} />
-          </div>
-          <ul className="flex flex-col gap-2">
-            {order.map((id) => {
-              const p = byGroup.get(id);
-              const pr = progress[id];
-              if (!p || !pr) return null;
-              return (
-                <li key={p.groupId} className={pr.status === "erro" ? "rounded bg-erro/10 p-2" : ""}>
-                  <p>
-                    <strong>{p.name}</strong> — <span className={STATUS_STYLE[pr.status]}>{statusLabel(pr)}</span>
-                  </p>
-                  {phase === "done" && (
-                    <p className="text-xs text-areia">
-                      {pr.added} adicionadas · {p.ignored} ignoradas
-                      {pr.url && (
-                        <>
-                          {" · "}
-                          <a className="text-ok underline" href={pr.url} target="_blank" rel="noreferrer">
-                            abrir no Spotify
-                          </a>
-                        </>
-                      )}
-                    </p>
-                  )}
-                  {pr.error && <RawError error={pr.error} />}
-                  {pr.status === "erro" && phase === "done" && (
-                    <button
-                      className="mt-1 rounded border border-fio bg-transparent px-2 py-0.5 text-xs hover:bg-grafite-2"
-                      onClick={() => retry(p.groupId)}
-                    >
-                      Tentar de novo
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          {phase === "done" && <p className="text-xs text-areia">Para rodar de novo, recarregue a página.</p>}
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
+
+  if (phase === "idle") return footer;
+
+  const willCreate = plan.filter((p) => p.uris.length > 0).length;
+  const title =
+    phase === "checking"
+      ? "Conferindo o Spotify"
+      : phase === "confirm"
+        ? `Criar ${willCreate} ${willCreate === 1 ? "playlist" : "playlists"}`
+        : phase === "running"
+          ? "Criando playlists"
+          : failedCount > 0
+            ? "Concluído com erros"
+            : "Playlists prontas";
+
+  return (
+    <>
+      {footer}
+      <dialog
+        ref={dialog}
+        tabIndex={-1}
+        aria-labelledby="create-title"
+        onCancel={(e) => {
+          e.preventDefault();
+          closeSheet();
+        }}
+        // a click on the backdrop lands on the dialog itself
+        onClick={(e) => e.target === e.currentTarget && (phase === "running" || phase === "done") && closeSheet()}
+        className="m-auto max-h-[min(52rem,calc(100dvh-2rem))] w-[min(44rem,calc(100%-2rem))] overflow-hidden rounded-2xl border border-fio bg-grafite p-0 text-papel shadow-2xl shadow-black/50"
+      >
+        <div className="flex max-h-[min(52rem,calc(100dvh-2rem))] flex-col">
+          <header className="flex flex-none items-start justify-between gap-4 border-b border-fio px-5 py-4 sm:px-6">
+            <div className="flex flex-col gap-1">
+              <h2 id="create-title" className="wide text-xl sm:text-2xl">
+                {title}
+              </h2>
+              <p className="text-sm text-areia">
+                {phase === "checking"
+                  ? "Procurando playlists que o Playlist Splitter já criou, para atualizar em vez de duplicar."
+                  : phase === "confirm"
+                    ? "Nada muda no Spotify antes de você confirmar."
+                    : head}
+              </p>
+            </div>
+            {phase !== "checking" && (
+              <button
+                className="grid size-9 flex-none place-items-center rounded-full text-areia transition-colors hover:bg-grafite-2 hover:text-papel"
+                onClick={closeSheet}
+                aria-label={phase === "confirm" ? "Cancelar" : "Esconder detalhes"}
+              >
+                <svg aria-hidden viewBox="0 0 16 16" className="size-4">
+                  <path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
+          </header>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4 sm:px-6">
+            {busy && <RateLimitNotice queue={spotify} service="Spotify" />}
+
+            {phase === "checking" && (
+              <ul className="flex flex-col gap-2" aria-busy>
+                {plan.map((p) => (
+                  <li key={p.groupId} className="flex items-center gap-3 rounded-lg border border-fio p-3">
+                    <span className="size-2.5 flex-none rounded-full" style={{ background: genreColor(p.groupId) }} />
+                    <span className="flex-1 truncate font-bold">{p.name}</span>
+                    <span className="skeleton h-4 w-24" />
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {phase === "confirm" && (
+              <>
+                {checkError && (
+                  <div className="rounded-lg border border-erro/40 bg-erro/10 p-3 text-sm">
+                    <p>Não foi possível verificar playlists existentes; todas serão criadas como novas.</p>
+                    <RawError error={checkError} />
+                  </div>
+                )}
+                <ul className="flex flex-col gap-2">
+                  {plan.map((p) => {
+                    const match = existing[p.groupId];
+                    const mode = modes[p.groupId];
+                    const setMode = (m: Mode) => setModes({ ...modes, [p.groupId]: m });
+                    const color = genreColor(p.groupId);
+                    return (
+                      <li
+                        key={p.groupId}
+                        className="flex flex-col gap-2 rounded-lg border border-fio bg-cafe/40 p-3 pl-4"
+                        style={{ borderLeft: `4px solid ${p.uris.length > 0 ? color : "var(--color-fio)"}` }}
+                      >
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p className="min-w-0 truncate font-bold">{p.name}</p>
+                          <p className="flex-none text-sm text-areia">
+                            <span className="num mr-1 text-2xl" style={{ color }}>
+                              {fmt(p.uris.length)}
+                            </span>
+                            faixas
+                          </p>
+                        </div>
+                        {p.ignored > 0 && (
+                          <p className="text-xs text-areia">{fmt(p.ignored)} ignoradas: sem URI válida</p>
+                        )}
+                        {match ? (
+                          <fieldset className="flex flex-col gap-2">
+                            <legend className="sr-only">O que fazer com {p.name}</legend>
+                            <div className="flex flex-wrap gap-2 text-sm">
+                              <ModeOption
+                                name={p.groupId}
+                                checked={mode === "update"}
+                                onChange={() => setMode("update")}
+                                label={
+                                  match.newUris.length > 0
+                                    ? `Atualizar existente (+${fmt(match.newUris.length)} novas)`
+                                    : "Atualizar existente (nada novo)"
+                                }
+                              />
+                              <ModeOption
+                                name={p.groupId}
+                                checked={mode === "create"}
+                                onChange={() => setMode("create")}
+                                label={`Criar nova (${isPublic ? "pública" : "privada"})`}
+                              />
+                            </div>
+                            <p className="text-xs text-areia">
+                              Já existe uma playlist com esse nome.{" "}
+                              <a className="text-papel underline underline-offset-2" href={match.url} target="_blank" rel="noreferrer">
+                                Ver no Spotify
+                              </a>
+                              {match.matches > 1 && (
+                                <span className="text-alerta"> {match.matches} com esse nome; usando a primeira.</span>
+                              )}
+                            </p>
+                          </fieldset>
+                        ) : p.uris.length === 0 ? (
+                          <p className="text-xs text-erro">Não será criada (sem faixas válidas)</p>
+                        ) : (
+                          <p className="text-xs text-areia">Nova playlist {isPublic ? "pública" : "privada"}</p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+
+            {(phase === "running" || phase === "done") && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="flex items-baseline gap-1.5">
+                      <span className="num text-5xl">{fmt(phase === "done" ? doneCount - failedCount : Math.min(current + 1, order.length))}</span>
+                      <span className="text-areia">
+                        de {fmt(order.length)} {phase === "done" ? "concluídas" : "playlists"}
+                      </span>
+                    </p>
+                    {phase === "running" && calls.etaMs !== null && (
+                      <p className="text-sm text-areia">{formatEta(calls.etaMs)}</p>
+                    )}
+                  </div>
+                  <ProgressBar percent={percent} />
+                </div>
+                <ul className="flex flex-col">
+                  {order.map((id) => {
+                    const p = byGroup.get(id);
+                    const pr = progress[id];
+                    if (!p || !pr) return null;
+                    const color = genreColor(id);
+                    const working = pr.status === "criando" || pr.status === "adicionando";
+                    return (
+                      <li key={id} className="flex flex-col gap-1.5 border-t border-fio py-3 first:border-t-0">
+                        <div className="flex items-center gap-3">
+                          <span
+                            aria-hidden
+                            className={`size-2.5 flex-none rounded-full ${working ? "animate-pulse" : ""}`}
+                            style={{ background: pr.status === "aguardando" ? "var(--color-fio)" : color }}
+                          />
+                          <span className="min-w-0 flex-1 truncate font-bold">{p.name}</span>
+                          <span className={`flex-none text-right text-sm ${STATUS_STYLE[pr.status] ?? "text-areia"}`}>
+                            {statusLabel(pr)}
+                          </span>
+                        </div>
+                        {pr.total > 0 && (
+                          <div className="ml-5.5 h-1 overflow-hidden rounded-full bg-cafe" aria-hidden>
+                            <div
+                              className="h-full rounded-full transition-[width] duration-300"
+                              style={{ width: `${(pr.added / pr.total) * 100}%`, background: color }}
+                            />
+                          </div>
+                        )}
+                        {phase === "done" && (
+                          <p className="ml-5.5 text-xs text-areia">
+                            {fmt(pr.added)} adicionadas · {fmt(p.ignored)} ignoradas
+                            {pr.url && (
+                              <>
+                                {" · "}
+                                <a className="text-papel underline underline-offset-2" href={pr.url} target="_blank" rel="noreferrer">
+                                  Abrir no Spotify
+                                </a>
+                              </>
+                            )}
+                          </p>
+                        )}
+                        {pr.error && (
+                          <div className="ml-5.5 flex flex-col items-start gap-2 rounded-lg border border-erro/40 bg-erro/10 p-2.5">
+                            <RawError error={pr.error} />
+                            {phase === "done" && (
+                              <button className="rounded-full border border-fio px-3 py-1 text-sm transition-colors hover:border-areia hover:bg-grafite-2" onClick={() => retry(id)}>
+                                Tentar de novo
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </div>
+
+          {phase === "confirm" && (
+            <footer className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-fio px-5 py-4 sm:px-6">
+              <label className="flex cursor-pointer items-center gap-3 text-sm">
+                <input type="checkbox" className="check" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+                <span>
+                  Tornar públicas as playlists novas
+                  <span className="block text-xs text-areia">Padrão: privadas. As existentes não mudam.</span>
+                </span>
+              </label>
+              <div className="flex w-full gap-2 sm:w-auto">
+                <button className={ghost} onClick={closeSheet}>
+                  Cancelar
+                </button>
+                <button className={`flex-1 sm:flex-none ${primary}`} disabled={!!disabledReason} onClick={run}>
+                  {disabledReason ?? "Confirmar e criar"}
+                </button>
+              </div>
+            </footer>
+          )}
+          {phase === "done" && (
+            <footer className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-fio px-5 py-4 sm:px-6">
+              <p className="text-xs text-areia">Para rodar de novo, recarregue a página.</p>
+              <button className={ghost} onClick={closeSheet}>
+                Fechar
+              </button>
+            </footer>
+          )}
+        </div>
+      </dialog>
+    </>
+  );
 });
+
+function ProgressBar({ percent }: { percent: number }) {
+  return (
+    <div
+      className="h-1.5 w-full overflow-hidden rounded-full bg-cafe"
+      role="progressbar"
+      aria-label="Progresso da criação"
+      aria-valuenow={Math.round(percent)}
+    >
+      <div className="h-full rounded-full bg-papel transition-[width] duration-300" style={{ width: `${percent}%` }} />
+    </div>
+  );
+}
+
+function ModeOption({ name, checked, onChange, label }: { name: string; checked: boolean; onChange: () => void; label: string }) {
+  return (
+    <label
+      className={`cursor-pointer rounded-full border px-3 py-1.5 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-papel ${
+        checked ? "border-papel bg-papel font-bold text-cafe" : "border-fio text-areia hover:border-areia hover:text-papel"
+      }`}
+    >
+      <input type="radio" name={`mode-${name}`} className="sr-only" checked={checked} onChange={onChange} />
+      {label}
+    </label>
+  );
+}

@@ -129,25 +129,7 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
   return (
     <div className="flex flex-col gap-8">
       <section aria-label="Composição da biblioteca" className="flex flex-col gap-5">
-        <div
-          className="split-in flex h-16 gap-0.5 overflow-hidden rounded-lg sm:h-20"
-          role="img"
-          aria-label={spectrum.bands.map((b) => `${b.name}: ${b.count} faixas`).join(", ")}
-        >
-          {spectrum.bands.map((b) => {
-            const share = b.count / Math.max(1, spectrum.total);
-            return (
-              <div
-                key={b.id}
-                title={`${b.name}: ${b.count} faixas (${Math.round(share * 100)}%)`}
-                className="flex min-w-1 items-end overflow-hidden p-2 transition-opacity duration-150"
-                style={{ flexGrow: b.count, background: genreColor(b.id), opacity: b.include ? 1 : 0.35 }}
-              >
-                {share >= 0.08 && <span className="truncate text-sm font-bold text-cafe">{b.name}</span>}
-              </div>
-            );
-          })}
-        </div>
+        <Spectrum bands={spectrum.bands} total={spectrum.total} />
         <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:flex sm:flex-wrap sm:gap-x-12">
           <Stat value={tracks.length} label="faixas únicas" />
           <Stat value={spectrum.genres} label={spectrum.genres === 1 ? "gênero" : "gêneros"} />
@@ -197,6 +179,70 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
     </div>
   );
 }
+
+type Band = { id: string; name: string; count: number; include: boolean };
+const LABELED = 5;
+const fmt = (n: number) => n.toLocaleString("pt-BR");
+
+// One band per group, as wide as its share. The 5 largest carry their name (and get a minimum
+// width so it fits); hovering any band shows its name and count.
+const Spectrum = memo(function Spectrum({ bands, total }: { bands: Band[]; total: number }) {
+  // hovered band and its center in px; the tooltip sits below it (above, it would slide under the sticky header)
+  const [hover, setHover] = useState<{ id: string; x: number } | null>(null);
+  const labeled = useMemo(
+    () => new Set([...bands].sort((a, b) => b.count - a.count).slice(0, LABELED).map((b) => b.id)),
+    [bands],
+  );
+  const shown = bands.find((b) => b.id === hover?.id);
+
+  return (
+    <div className="relative">
+      <div
+        className="split-in flex h-16 gap-0.5 overflow-hidden rounded-lg sm:h-20"
+        role="img"
+        aria-label={bands.map((b) => `${b.name}: ${fmt(b.count)} faixas`).join(", ")}
+        onMouseLeave={() => setHover(null)}
+      >
+        {bands.map((b) => (
+          <div
+            key={b.id}
+            onMouseEnter={(e) => setHover({ id: b.id, x: e.currentTarget.offsetLeft + e.currentTarget.offsetWidth / 2 })}
+            className={`flex min-w-1 flex-col justify-end overflow-hidden px-2 pb-1.5 text-cafe transition-opacity duration-150 ${
+              labeled.has(b.id) ? "min-w-12 sm:min-w-20" : ""
+            }`}
+            style={{
+              flexGrow: b.count,
+              flexBasis: 0,
+              background: genreColor(b.id),
+              opacity: b.include ? 1 : hover?.id === b.id ? 0.6 : 0.35,
+            }}
+          >
+            {labeled.has(b.id) && (
+              <>
+                <span className="num truncate text-lg sm:text-2xl">{fmt(b.count)}</span>
+                <span className="truncate text-xs font-bold sm:text-sm">{b.name}</span>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      {shown && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-full z-10 mt-2 flex -translate-x-1/2 items-baseline gap-2 rounded-md border border-fio bg-grafite-2 px-3 py-1.5 text-sm whitespace-nowrap shadow-lg shadow-black/30"
+          style={{ left: `clamp(6rem, ${hover?.x ?? 0}px, calc(100% - 6rem))` }}
+        >
+          <span className="size-2.5 flex-none self-center rounded-full" style={{ background: genreColor(shown.id) }} />
+          <span className="font-bold">{shown.name}</span>
+          <span className="text-areia">
+            {fmt(shown.count)} {shown.count === 1 ? "faixa" : "faixas"} · {Math.round((shown.count / Math.max(1, total)) * 100)}%
+            {!shown.include && " · desmarcado"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+});
 
 function Stat({ value, label }: { value: number; label: string }) {
   return (

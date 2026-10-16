@@ -20,9 +20,11 @@
 html {
   color-scheme: dark;
   scrollbar-color: var(--color-fio) transparent;
+  background: var(--color-cafe);
 }
 
 body {
+  min-height: 100dvh;
   background: var(--color-cafe);
   color: var(--color-papel);
   font-family: var(--font-sans);
@@ -131,6 +133,14 @@ details > summary::-webkit-details-marker {
 }
 details[open] .chevron {
   transform: rotate(90deg);
+}
+
+/* the dialog takes focus only to announce its title; its controls keep the ring */
+dialog:focus-visible {
+  outline: none;
+}
+dialog::backdrop {
+  background: rgb(28 25 22 / 0.8);
 }
 
 @media (prefers-reduced-motion: reduce) {

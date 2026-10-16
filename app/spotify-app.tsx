@@ -5,11 +5,12 @@ import Image from "next/image";
 import { markIncoherent } from "@/lib/classify";
 import { isSplitterPlaylist } from "@/lib/playlist-plan";
 import { isReadablePlaylist, LIKED_ID, type ApiResult, type LikedSummary, type Me, type Playlist } from "@/lib/spotify";
-import { AnalysisPanel } from "./analysis-panel";
+import { AnalysisPanel, itemStatus } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
 import { PlaylistPicker } from "./playlist-picker";
 import { Preview } from "./preview";
 import { RawError } from "./raw-error";
+import { Steps } from "./steps";
 import { likedAsPlaylist, loadLikedSummary, loadMe, loadPlaylists } from "./spotify-data";
 
 export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
@@ -79,6 +80,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   const setAllSelected = useCallback((ids: string[]) => setSelected(new Set(ids)), []);
   const onSpotifyChanged = useCallback(() => refreshPlaylists(true), [refreshPlaylists]);
 
+  // per-playlist analysis status, shown next to each playlist in the list
+  const statusById = useMemo(() => new Map(run?.items.map((i) => [i.id, itemStatus(run, i)])), [run]);
+
   const active = run?.phase === "running" || run?.phase === "paused";
   const step = run && tracks.length > 0 && !active ? 3 : 2;
 
@@ -115,8 +119,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
       </header>
 
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 flex-1 items-start gap-8 px-4 pt-6 pb-36 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12">
+        {/* desktop: fixed height under the header; only the playlist list scrolls, the analysis stays in view */}
         <aside
-          className="flex flex-col gap-5 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-11rem)] lg:overflow-y-auto lg:pr-2"
+          className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-[calc(100dvh-11rem)]"
           aria-label="Escolher e analisar"
         >
           {!me.ok && <RawError error={me} />}
@@ -163,14 +168,16 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 playlists={pickerItems}
                 selected={selected}
                 disabled={active}
+                status={statusById}
                 onToggle={toggleSelected}
                 onSetAll={setAllSelected}
+                onReprocess={analysis.reprocess}
               />
             </>
           )}
 
           <button
-            className="rounded-full bg-papel px-5 py-3 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex-none rounded-full bg-papel px-5 py-3 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={active || chosen.length === 0}
             onClick={() => {
               setCacheCleared(false);
@@ -215,40 +222,6 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
         </section>
       </div>
     </div>
-  );
-}
-
-const STEPS = ["Conectar", "Escolher e analisar", "Revisar e criar"];
-
-function Steps({ current }: { current: number }) {
-  return (
-    <ol className="flex items-center gap-2 text-sm" aria-label="Etapas">
-      {STEPS.map((label, i) => {
-        const n = i + 1;
-        const state = n < current ? "done" : n === current ? "current" : "todo";
-        return (
-          <li key={n} className="flex items-center gap-2" aria-current={state === "current" ? "step" : undefined}>
-            {i > 0 && <span aria-hidden className={`h-px w-4 sm:w-8 ${n <= current ? "bg-papel" : "bg-fio"}`} />}
-            <span
-              aria-hidden
-              className={`grid size-6 place-items-center rounded-full text-xs font-bold ${
-                state === "current"
-                  ? "bg-papel text-cafe"
-                  : state === "done"
-                    ? "border border-papel text-papel"
-                    : "border border-fio text-areia"
-              }`}
-            >
-              {state === "done" ? "✓" : n}
-            </span>
-            <span className={state === "current" ? "font-bold" : "sr-only text-areia md:not-sr-only"}>
-              {label}
-              {state === "done" && <span className="sr-only"> (concluído)</span>}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
