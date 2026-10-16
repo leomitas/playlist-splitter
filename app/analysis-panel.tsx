@@ -8,11 +8,11 @@ import { RateLimitNotice } from "./rate-limit-notice";
 import { RawError } from "./raw-error";
 
 const STATUS_STYLE: Record<ItemStatus, string> = {
-  pendente: "text-gray-500",
-  analisando: "text-blue-700",
-  concluída: "text-green-700",
-  erro: "text-red-700",
-  cancelada: "text-gray-500",
+  pendente: "text-areia",
+  analisando: "text-papel",
+  concluída: "text-ok",
+  erro: "text-erro",
+  cancelada: "text-areia",
 };
 
 const fmt = (n: number) => n.toLocaleString("pt-BR");
@@ -67,23 +67,23 @@ export function AnalysisPanel({
         : `Playlist ${fmt(Math.min(finished + 1, total))} de ${fmt(total)}`;
 
   return (
-    <section className="flex flex-col gap-2 rounded border p-3 text-sm">
+    <section className="flex flex-col gap-3 rounded-xl border border-fio bg-grafite p-4 text-sm" aria-label="Análise">
       <p className="font-medium">
         {head} · {fmt(run.tracks.length)} faixas únicas
         {eta !== null && ` · ${formatEta(eta)}`}
         {run.phase === "paused" && " · pausada"}
       </p>
-      <div className="h-2 w-full overflow-hidden rounded bg-gray-200" role="progressbar" aria-valuenow={Math.round(percent)}>
-        <div className="h-full bg-green-600 transition-all" style={{ width: `${percent}%` }} />
+      <div className="h-2 w-full overflow-hidden rounded bg-cafe" role="progressbar" aria-valuenow={Math.round(percent)}>
+        <div className="h-full bg-papel transition-all" style={{ width: `${percent}%` }} />
       </div>
       {run.current && reading && (
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-areia">
           {reading.name}: {run.current.step === "faixas" ? "lendo faixas" : "buscando gêneros"} {progressText(run.current)}
         </p>
       )}
       {skipped.length > 0 && (
-        <details className="rounded bg-yellow-50 p-2 text-xs">
-          <summary className="cursor-pointer font-medium text-yellow-900">
+        <details className="rounded bg-alerta/10 p-2 text-xs">
+          <summary className="cursor-pointer font-medium text-alerta">
             {fmt(skipped.length)} {skipped.length === 1 ? "faixa pulada" : "faixas puladas"} por erro do Spotify
           </summary>
           <ul className="mt-1 flex max-h-60 flex-col gap-0.5 overflow-auto">
@@ -97,23 +97,23 @@ export function AnalysisPanel({
         </details>
       )}
       {untaggedGroups.map((g) => (
-        <details key={g.reason} className="rounded bg-yellow-50 p-2 text-xs">
-          <summary className="cursor-pointer font-medium text-yellow-900">
+        <details key={g.reason} className="rounded bg-alerta/10 p-2 text-xs">
+          <summary className="cursor-pointer font-medium text-alerta">
             {fmt(g.list.length)} {g.list.length === 1 ? "faixa sem tags" : "faixas sem tags"} por {g.reason}
           </summary>
           <ul className="mt-1 flex max-h-60 flex-col gap-0.5 overflow-auto">
             {g.list.map((u, idx) => (
               <li key={idx}>
                 {u.source}: {u.name || "(sem nome)"} — {u.artist || "(sem artista)"}{" "}
-                <span className="text-gray-500">({u.detail})</span>
+                <span className="text-areia">({u.detail})</span>
               </li>
             ))}
           </ul>
         </details>
       ))}
       {failed > 0 && (
-        <div className="flex flex-col gap-2 rounded bg-red-50 p-2">
-          <p className="text-xs font-medium text-red-700">
+        <div className="flex flex-col gap-2 rounded bg-erro/10 p-2">
+          <p className="text-xs font-medium text-erro">
             {fmt(failed)} de {fmt(total)} {failed === 1 ? "playlist com erro" : "playlists com erro"}
           </p>
           {run.items
@@ -123,9 +123,9 @@ export function AnalysisPanel({
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate font-medium">{i.name}</span>
                   {i.errorCount && i.errorCount > 1 && (
-                    <span className="text-xs text-red-700">{fmt(i.errorCount)} falhas</span>
+                    <span className="text-xs text-erro">{fmt(i.errorCount)} falhas</span>
                   )}
-                  <button className="rounded border bg-white px-2 text-xs hover:bg-gray-100" onClick={() => onReprocess(i.id)}>
+                  <button className="rounded-full border border-fio bg-transparent px-2 text-xs hover:bg-grafite-2" onClick={() => onReprocess(i.id)}>
                     Reprocessar
                   </button>
                 </div>
@@ -142,15 +142,15 @@ export function AnalysisPanel({
       {active && (
         <div className="flex gap-2">
           {run.phase === "running" ? (
-            <button className="rounded border px-3 py-1 hover:bg-gray-100" onClick={onPause}>
+            <button className="rounded-full border border-fio px-3 py-1 hover:bg-grafite-2" onClick={onPause}>
               Pausar
             </button>
           ) : (
-            <button className="rounded border bg-green-600 px-3 py-1 text-white hover:bg-green-700" onClick={onResume}>
+            <button className="rounded-full border border-fio bg-papel px-3 py-1 font-bold text-cafe hover:opacity-90" onClick={onResume}>
               Retomar
             </button>
           )}
-          <button className="rounded border px-3 py-1 hover:bg-gray-100" onClick={onCancel}>
+          <button className="rounded-full border border-fio px-3 py-1 hover:bg-grafite-2" onClick={onCancel}>
             Cancelar
           </button>
         </div>
@@ -162,7 +162,7 @@ export function AnalysisPanel({
       {showList && (
         <ul className="flex max-h-80 flex-col gap-1 overflow-auto">
           {run.items.map((i) => (
-            <li key={i.id} className="flex flex-col border-t pt-1">
+            <li key={i.id} className="flex flex-col border-t border-fio pt-1">
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate">{i.name}</span>
                 <span className={STATUS_STYLE[i.status]}>
@@ -170,7 +170,7 @@ export function AnalysisPanel({
                   {i.status === "erro" && i.errorCount && i.errorCount > 1 && ` (${fmt(i.errorCount)} falhas)`}
                 </span>
                 {(i.status === "erro" || i.status === "cancelada") && (
-                  <button className="rounded border px-2 text-xs hover:bg-gray-100" onClick={() => onReprocess(i.id)}>
+                  <button className="rounded-full border border-fio px-2 text-xs hover:bg-grafite-2" onClick={() => onReprocess(i.id)}>
                     Reprocessar
                   </button>
                 )}

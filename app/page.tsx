@@ -21,7 +21,7 @@ async function logout() {
 
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-red-400 bg-red-50 p-3 text-sm text-red-800 break-words">
+    <div className="rounded-md border border-erro/60 bg-erro/10 p-3 text-sm text-erro break-words">
       {children}
     </div>
   );
@@ -30,7 +30,7 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 function LoginButton({ label = "Entrar com Spotify" }: { label?: string }) {
   return (
     <form action={login}>
-      <button className="rounded-full bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-700">
+      <button className="rounded-full bg-papel px-6 py-3 font-bold text-cafe transition-opacity hover:opacity-90">
         {label}
       </button>
     </form>
@@ -45,6 +45,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
   if (!session?.accessToken) {
     return (
       <div className="flex flex-col items-center gap-4">
+        <h1 className="wide text-3xl">Playlist Splitter</h1>
         {error && (
           <ErrorBox>
             Falha no login (Auth.js): <strong>{String(error)}</strong>. Veja o terminal do
@@ -52,7 +53,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
           </ErrorBox>
         )}
         <LoginButton />
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-areia">
           Redirect URI esperada:{" "}
           <code>{`${process.env.AUTH_URL}/api/auth/callback/spotify`}</code>
         </p>
@@ -63,28 +64,31 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
   if (session.error === "RefreshTokenError") {
     return (
       <div className="flex flex-col items-center gap-4">
+        <h1 className="wide text-3xl">Playlist Splitter</h1>
         <ErrorBox>Não foi possível renovar o token do Spotify. Entre novamente.</ErrorBox>
         <LoginButton label="Entrar novamente" />
       </div>
     );
   }
 
+  // Spotify data is loaded on demand in the browser (queued, cached per tab)
   return (
-    <div className="flex w-full flex-col gap-6">
-      {/* Spotify data is loaded on demand in the browser (queued, cached per tab) */}
-      <SpotifyApp />
-      <form action={logout}>
-        <button className="rounded-full border px-6 py-2 hover:bg-gray-100">Sair</button>
-      </form>
-    </div>
+    <SpotifyApp
+      logout={
+        <form action={logout}>
+          <button className="rounded-full border border-fio px-3 py-1 text-sm text-areia transition-colors hover:border-areia hover:text-papel">
+            Sair
+          </button>
+        </form>
+      }
+    />
   );
 }
 
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 p-6">
-      <h1 className="text-2xl font-bold">Spotify Login Test</h1>
-      <Suspense fallback={<p>Carregando…</p>}>
+    <main className="flex w-full flex-1 flex-col items-center justify-center">
+      <Suspense fallback={<p className="text-areia">Carregando…</p>}>
         <Content searchParams={searchParams} />
       </Suspense>
     </main>

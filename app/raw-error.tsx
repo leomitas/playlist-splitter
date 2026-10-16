@@ -2,7 +2,7 @@ import type { ApiError } from "@/lib/spotify";
 
 export function RawError({ error }: { error: ApiError }) {
   return (
-    <div className="rounded-md border border-red-400 bg-red-50 p-3 text-sm text-red-800 break-words">
+    <div className="rounded-md border border-erro/60 bg-erro/10 p-3 text-sm text-erro break-words">
       <p className="font-semibold">
         {error.method ?? "GET"} {error.url} → {error.status ?? "sem resposta"}
       </p>

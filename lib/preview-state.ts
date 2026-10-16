@@ -54,7 +54,9 @@ export function initialState(tracks: ClassifiedTrack[]): PreviewState {
   return { groups, autoMoved, aliases: {} };
 }
 
+// same object when the key isn't there, so memoized cards don't see a change
 function withoutKey<T>(record: Record<string, T>, key: string) {
+  if (!(key in record)) return record;
   const copy = { ...record };
   delete copy[key];
   return copy;
