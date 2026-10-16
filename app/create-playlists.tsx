@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { chunk, findSplitterPlaylists, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
 import type { Group } from "@/lib/preview-state";
@@ -29,11 +29,33 @@ type Progress = {
   // tracks this playlist will receive
   total: number;
   url?: string;
+  // set once Spotify confirmed the creation; a retry adds to it instead of creating another
+  playlistId?: string;
   error?: ApiError;
 };
 
+type Job = { p: PlannedPlaylist; match: ExistingMatch | null; uris: string[] };
+
+// Write calls a job still needs: create (unless the playlist exists) + the unconfirmed batches
+const callsFor = (j: Job, from: Progress | undefined) =>
+  j.uris.length === 0
+    ? 0
+    : ((from?.playlistId ?? j.match) ? 0 : 1) + chunk(j.uris.slice(from?.added ?? 0)).length;
+
 // Write calls (create + add batches) across the whole run, for the global bar and the ETA
 type CallStats = { done: number; total: number; etaMs: number | null };
+type Clock = { total: number; done: number; doneAtStart: number; startedAt: number };
+
+// ETA from the average time per write call since the run (or retry) started, waits included
+function readClock(c: Clock): CallStats {
+  const since = c.done - c.doneAtStart;
+  return { done: c.done, total: c.total, etaMs: since === 0 ? null : ((Date.now() - c.startedAt) / since) * (c.total - c.done) };
+}
+
+function restartClock(c: Clock) {
+  c.doneAtStart = c.done;
+  c.startedAt = Date.now();
+}
 
 type ExistingMatch = {
   playlistId: string;
@@ -84,7 +106,8 @@ function RawError({ error }: { error: ApiError }) {
   );
 }
 
-export function CreatePlaylists({
+// Memoized: gets the deferred groups, so it re-renders after the click has painted
+export const CreatePlaylists = memo(function CreatePlaylists({
   groups,
   tracks,
   disabledReason,
@@ -108,9 +131,14 @@ export function CreatePlaylists({
   const [calls, setCalls] = useState<CallStats>({ done: 0, total: 0, etaMs: null });
   // state updates are async; the ref blocks a second click landing before re-render
   const running = useRef(false);
+  const jobs = useRef<Job[]>([]);
+  const stats = useRef<Clock>({ total: 0, done: 0, doneAtStart: 0, startedAt: 0 });
+  const hasPlan = useMemo(() => planPlaylists(groups, tracks).length > 0, [groups, tracks]);
 
   const update = (groupId: string, p: Partial<Progress>) =>
     setProgress((prev) => ({ ...prev, [groupId]: { ...prev[groupId], ...p } }));
+
+  const publish = () => setCalls(readClock(stats.current));
 
   async function openConfirm() {
     const planned = planPlaylists(groups, tracks);
@@ -124,9 +152,9 @@ export function CreatePlaylists({
     setPhase("confirm");
   }
 
-  async function addInBatches(groupId: string, playlistId: string, uris: string[], onCall: () => void) {
+  async function addInBatches(groupId: string, playlistId: string, uris: string[], alreadyAdded: number, onCall: () => void) {
     const batches = chunk(uris);
-    let added = 0;
+    let added = alreadyAdded;
     for (let i = 0; i < batches.length; i++) {
       update(groupId, { status: "adicionando", batch: i + 1, totalBatches: batches.length });
       const r = await spotify.call(() => addTracks(playlistId, batches[i]), `/playlists/${playlistId}/items`);
@@ -138,96 +166,120 @@ export function CreatePlaylists({
     return { added, error: undefined };
   }
 
+  // Statuses only move forward on API answers: "concluída" means Spotify confirmed every batch.
+  // A retry continues where the job stopped: it reuses the playlist already created and only
+  // sends the batches that weren't confirmed.
+  async function processJob({ p, match, uris }: Job, from: Progress | undefined) {
+    const s = stats.current;
+    const before = s.done;
+    const planned = callsFor({ p, match, uris }, from);
+    const onCall = () => {
+      s.done++;
+      publish();
+    };
+    // calls a failed playlist won't make anymore leave the total, so the bar still reaches the end
+    const settle = () => {
+      s.total -= planned - (s.done - before);
+      publish();
+    };
+
+    if (match) update(p.groupId, { url: match.url });
+    if (uris.length === 0) {
+      update(p.groupId, { status: match ? "nada novo" : "não criada" });
+      return;
+    }
+
+    let playlistId = from?.playlistId ?? match?.playlistId;
+    if (!playlistId) {
+      update(p.groupId, { status: "criando" });
+      const created = await spotify.call(() => createPlaylist(p.name, isPublic), "/me/playlists");
+      if (!created.ok) {
+        update(p.groupId, { status: "erro", error: created });
+        settle();
+        return;
+      }
+      onCall();
+      playlistId = created.data.id;
+      update(p.groupId, { url: created.data.url, playlistId });
+    }
+    const already = from?.added ?? 0;
+    const { added, error } = await addInBatches(p.groupId, playlistId, uris.slice(already), already, onCall);
+    update(p.groupId, error ? { status: "erro", error, added } : { status: match ? "atualizada" : "criada", added });
+    settle();
+  }
+
+  function finish() {
+    // stays in the summary (never back to idle) so the same playlists aren't created twice by accident
+    setPhase("done");
+    running.current = false;
+    invalidatePlaylists();
+    onDone();
+  }
+
   async function run() {
     if (running.current) return;
     running.current = true;
 
     // Smallest first, so the first playlists are ready quickly. Uses the existing-playlist
     // lookup made when the confirmation opened; the playlist list isn't fetched again.
-    const jobs = plan
+    const list: Job[] = plan
       .map((p) => {
-        const match = modes[p.groupId] === "update" ? existing[p.groupId] : null;
-        const uris = match ? match.newUris : p.uris;
-        const create = !match && uris.length > 0;
-        return { p, match, uris, calls: (create ? 1 : 0) + chunk(uris).length };
+        const match = modes[p.groupId] === "update" ? (existing[p.groupId] ?? null) : null;
+        return { p, match, uris: match ? match.newUris : p.uris };
       })
       .sort((a, b) => a.uris.length - b.uris.length);
+    jobs.current = list;
+    stats.current = { total: list.reduce((n, j) => n + callsFor(j, undefined), 0), done: 0, doneAtStart: 0, startedAt: 0 };
+    restartClock(stats.current);
 
-    let total = jobs.reduce((n, j) => n + j.calls, 0);
-    let done = 0;
-    const startedAt = Date.now();
-    // ETA from the average time per write call so far, rate-limit waits included
-    const publish = () =>
-      setCalls({ done, total, etaMs: done === 0 ? null : ((Date.now() - startedAt) / done) * (total - done) });
-
-    setOrder(jobs.map((j) => j.p.groupId));
+    setOrder(list.map((j) => j.p.groupId));
     setCurrent(0);
-    setCalls({ done: 0, total, etaMs: null });
+    setCalls({ done: 0, total: stats.current.total, etaMs: null });
     setProgress(
-      Object.fromEntries(jobs.map((j) => [j.p.groupId, { status: "aguardando", added: 0, total: j.uris.length } as Progress])),
+      Object.fromEntries(list.map((j) => [j.p.groupId, { status: "aguardando", added: 0, total: j.uris.length } as Progress])),
     );
     setPhase("running");
 
-    for (const [i, { p, match, uris, calls: planned }] of jobs.entries()) {
+    for (const [i, job] of list.entries()) {
       setCurrent(i);
-      const before = done;
-      const onCall = () => {
-        done++;
-        publish();
-      };
-      // calls a failed playlist won't make anymore leave the total, so the bar still reaches the end
-      const settle = () => {
-        total -= planned - (done - before);
-        publish();
-      };
-
-      if (match) {
-        update(p.groupId, { url: match.url });
-        if (uris.length === 0) {
-          update(p.groupId, { status: "nada novo" });
-          continue;
-        }
-        const { added, error } = await addInBatches(p.groupId, match.playlistId, uris, onCall);
-        update(p.groupId, error ? { status: "erro", error, added } : { status: "atualizada", added });
-        settle();
-        continue;
-      }
-
-      if (uris.length === 0) {
-        update(p.groupId, { status: "não criada" });
-        continue;
-      }
-      update(p.groupId, { status: "criando" });
-      const created = await spotify.call(() => createPlaylist(p.name, isPublic), "/me/playlists");
-      if (!created.ok) {
-        update(p.groupId, { status: "erro", error: created });
-        settle();
-        continue;
-      }
-      onCall();
-      update(p.groupId, { url: created.data.url });
-      const { added, error } = await addInBatches(p.groupId, created.data.id, uris, onCall);
-      update(p.groupId, error ? { status: "erro", error, added } : { status: "criada", added });
-      settle();
+      await processJob(job, undefined);
     }
+    finish();
+  }
 
-    // stays disabled after finishing so the same playlists aren't created twice by accident
-    setPhase("done");
-    invalidatePlaylists();
-    onDone();
+  async function retry(groupId: string) {
+    const job = jobs.current.find((j) => j.p.groupId === groupId);
+    const from = progress[groupId];
+    if (running.current || !job || from?.status !== "erro") return;
+    running.current = true;
+    const s = stats.current;
+    s.total += callsFor(job, from);
+    restartClock(s);
+    publish();
+    setCurrent(order.indexOf(groupId));
+    update(groupId, { status: "aguardando", error: undefined });
+    setPhase("running");
+    await processJob(job, from);
+    finish();
   }
 
   const fmt = (n: number) => n.toLocaleString("pt-BR");
   const statusLabel = (pr: Progress) =>
-    pr.status === "adicionando"
-      ? `adicionando ${fmt(pr.added)}/${fmt(pr.total)}`
-      : pr.status === "criada"
-        ? `concluída · criada com ${fmt(pr.added)} faixas`
-        : pr.status === "atualizada"
-          ? `concluída · atualizada (+${fmt(pr.added)} faixas)`
-          : pr.status === "nada novo"
-            ? "concluída · nada novo"
-            : pr.status;
+    pr.status === "aguardando"
+      ? "Na fila"
+      : pr.status === "criando"
+        ? "Criando…"
+        : pr.status === "adicionando"
+          ? `Adicionando ${fmt(pr.added)}/${fmt(pr.total)}`
+          : pr.status === "criada"
+            ? `Concluída · criada com ${fmt(pr.added)} faixas`
+            : pr.status === "atualizada"
+              ? `Concluída · atualizada (+${fmt(pr.added)} faixas)`
+              : pr.status === "nada novo"
+                ? "Concluída · nada novo"
+                : pr.status === "erro"
+                  ? `Erro${pr.added > 0 ? ` (${fmt(pr.added)} de ${fmt(pr.total)} faixas adicionadas)` : ""}`
+                  : "Não criada (sem faixas válidas)";
   const STATUS_STYLE: Partial<Record<Progress["status"], string>> = {
     aguardando: "text-gray-500",
     criando: "text-blue-700",
@@ -261,7 +313,7 @@ export function CreatePlaylists({
       {phase === "idle" && (
         <button
           className="self-start rounded-full bg-green-600 px-5 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-40"
-          disabled={!!disabledReason || planPlaylists(groups, tracks).length === 0}
+          disabled={!!disabledReason || !hasPlan}
           onClick={openConfirm}
         >
           {disabledReason ?? "Criar playlists selecionadas"}
@@ -370,6 +422,14 @@ export function CreatePlaylists({
                     </p>
                   )}
                   {pr.error && <RawError error={pr.error} />}
+                  {pr.status === "erro" && phase === "done" && (
+                    <button
+                      className="mt-1 rounded border bg-white px-2 py-0.5 text-xs hover:bg-gray-100"
+                      onClick={() => retry(p.groupId)}
+                    >
+                      Tentar de novo
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -379,4 +439,4 @@ export function CreatePlaylists({
       )}
     </div>
   );
-}
+});

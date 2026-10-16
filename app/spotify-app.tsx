@@ -19,7 +19,7 @@ export function SpotifyApp() {
   const [liked, setLiked] = useState<ApiResult<LikedSummary> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // local state only: nothing in the URL, so a reload doesn't trigger any call by itself
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [cacheCleared, setCacheCleared] = useState(false);
   const run = useSyncExternalStore(analysis.subscribe, analysis.get, () => null);
 
@@ -44,20 +44,50 @@ export function SpotifyApp() {
     markIncoherent(copy);
     return copy;
   }, [run?.tracks]);
-
-  if (!me) return <p className="text-sm">Carregando perfil…</p>;
+  const stats = useMemo(
+    () => ({
+      lowConfidence: tracks.filter((t) => t.lowConfidence).length,
+      other: tracks.filter((t) => t.family === OTHER).length,
+    }),
+    [tracks],
+  );
 
   // the API doesn't return items for playlists the user neither owns nor collaborates on
   // liked songs first; playlists created by this app are left out so they aren't re-analyzed
-  const readable =
-    me.ok && playlists?.ok
-      ? [
-          ...(liked?.ok ? [likedAsPlaylist(liked.data, me.data)] : []),
-          ...playlists.data.filter((p) => isReadablePlaylist(p, me.data.id) && !isSplitterPlaylist(p, me.data.id)),
-        ]
-      : [];
+  const readable = useMemo(
+    () =>
+      me?.ok && playlists?.ok
+        ? [
+            ...(liked?.ok ? [likedAsPlaylist(liked.data, me.data)] : []),
+            ...playlists.data.filter((p) => isReadablePlaylist(p, me.data.id) && !isSplitterPlaylist(p, me.data.id)),
+          ]
+        : [],
+    [me, playlists, liked],
+  );
+  const pickerItems = useMemo(
+    () =>
+      readable.map((p) => ({
+        id: p.id,
+        name: liked?.ok && p.id === LIKED_ID ? `${p.name} (${liked.data.total.toLocaleString("pt-BR")})` : p.name,
+      })),
+    [readable, liked],
+  );
   // drop selections that disappeared after "Atualizar lista"
-  const chosen = readable.filter((p) => selected.includes(p.id));
+  const chosen = useMemo(() => readable.filter((p) => selected.has(p.id)), [readable, selected]);
+
+  const toggleSelected = useCallback(
+    (id: string) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [],
+  );
+  const setAllSelected = useCallback((ids: string[]) => setSelected(new Set(ids)), []);
+  const onSpotifyChanged = useCallback(() => refreshPlaylists(true), [refreshPlaylists]);
+
+  if (!me) return <p className="text-sm">Carregando perfil…</p>;
   const active = run?.phase === "running" || run?.phase === "paused";
 
   async function clearCache() {
@@ -120,13 +150,11 @@ export function SpotifyApp() {
               </div>
             )}
             <PlaylistPicker
-              playlists={readable.map((p) => ({
-                id: p.id,
-                name: liked?.ok && p.id === LIKED_ID ? `${p.name} (${liked.data.total.toLocaleString("pt-BR")})` : p.name,
-              }))}
+              playlists={pickerItems}
               selected={selected}
               disabled={active}
-              onChange={setSelected}
+              onToggle={toggleSelected}
+              onSetAll={setAllSelected}
             />
           </>
         )}
@@ -158,15 +186,14 @@ export function SpotifyApp() {
           <h2 className="font-semibold">Prévia por gênero</h2>
           <p className="text-gray-600">
             {tracks.length} faixas únicas ({run.totalTracks - tracks.length} repetidas removidas) ·{" "}
-            {tracks.filter((t) => t.lowConfidence).length} de baixa confiança ·{" "}
-            {tracks.filter((t) => t.family === OTHER).length} sem família
+            {stats.lowConfidence} de baixa confiança · {stats.other} sem família
           </p>
           <Preview
             key={run.id}
             tracks={tracks}
             storageKey={previewStorageKey(run.id)}
             createDisabledReason={active ? "Aguarde a análise terminar" : undefined}
-            onSpotifyChanged={() => refreshPlaylists(true)}
+            onSpotifyChanged={onSpotifyChanged}
           />
         </section>
       )}

@@ -117,9 +117,12 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
       };
 
     case "move": {
+      // untouched groups keep their identity, so memoized group cards don't re-render
       const groups = state.groups.map((g) => {
-        const rest = g.trackKeys.filter((k) => k !== action.trackKey);
-        return g.id === action.toGroupId ? { ...g, trackKeys: [...rest, action.trackKey] } : { ...g, trackKeys: rest };
+        const has = g.trackKeys.includes(action.trackKey);
+        const rest = has ? g.trackKeys.filter((k) => k !== action.trackKey) : g.trackKeys;
+        if (g.id === action.toGroupId) return { ...g, trackKeys: [...rest, action.trackKey] };
+        return has ? { ...g, trackKeys: rest } : g;
       });
       // a manual move overrides the automatic suggestion
       return { ...state, groups, autoMoved: withoutKey(state.autoMoved, action.trackKey) };
