@@ -1,5 +1,14 @@
 // Last.fm tag -> genre family. This is a whitelist: tags not listed here are ignored.
-// Tags are compared in lowercase; add variations freely.
+//
+// How to add a mapping (see CONTRIBUTING.md):
+// - Add the tag, in lowercase, to the family it belongs to. Spelling variations are welcome
+//   ("hip-hop", "hip hop", "hiphop"); accented and unaccented forms are separate tags.
+// - A tag must appear in only one family (the later one would win silently; a test checks it).
+// - New family: add a key below and a color in app/genre-colors.ts (optional; families
+//   without one get a stable color from their name).
+// - Avoid tags that describe mood or era ("chill", "80s", "female vocalists"): they cross
+//   genres and would pull unrelated tracks together.
+// - Add a case to tests/classify.test.ts when the mapping fixes a real misclassification.
 
 export const OTHER = "Outros";
 

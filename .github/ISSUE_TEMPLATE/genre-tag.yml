@@ -1,0 +1,33 @@
+name: Genre / tag suggestion
+description: A Last.fm tag that should map to a genre family (or a new family)
+labels: [genres]
+body:
+  - type: markdown
+    attributes:
+      value: The map lives in `lib/genre-families.ts`. Pull requests are welcome; see CONTRIBUTING.md.
+  - type: input
+    id: tag
+    attributes:
+      label: Last.fm tag(s)
+      placeholder: "brazilian phonk, funk automotivo"
+    validations:
+      required: true
+  - type: input
+    id: family
+    attributes:
+      label: Family it should map to (existing or new)
+      placeholder: Phonk
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example artists/tracks
+      description: Artists whose top tags on last.fm show this tag, and where they end up today (e.g. "Outros").
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Could this tag pull in unrelated music?
+      description: Mood, era or language tags ("chill", "80s", "brazilian") usually do.

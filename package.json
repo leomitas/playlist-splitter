@@ -8,6 +8,8 @@
     "start": "next start -H 127.0.0.1 -p 3000",
     "lint": "eslint",
     "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "setup:env": "node scripts/setup-env.mjs",
     "doctor": "node scripts/doctor.mjs"
   },
@@ -25,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.7"
