@@ -3,6 +3,7 @@
 // Read-only: only GETs to Spotify and Last.fm.
 
 import { classifyTrack, CLASSIFIER_VERSION, hasFamilyTag, type ClassifiedTrack } from "@/lib/classify";
+import { dedupe, titleKey } from "@/lib/dedupe";
 import { idbClear, idbGet, idbSet } from "@/lib/idb";
 import { readNewSince, trackIdentity } from "@/lib/incremental-sync";
 import { getArtistTags, getTrackTags } from "@/lib/lastfm-client";
@@ -155,16 +156,16 @@ async function classifyFresh(fresh: PlaylistTrack[], stop: () => Promise<boolean
   return { classified, untagged, fatal: fatal as ApiError | null };
 }
 
-// dedupe within the batch and against everything already analyzed
+// dedupe within the batch and against everything already analyzed: same Spotify id, or same
+// artist + title (lib/dedupe.ts)
 function unseen(tracks: PlaylistTrack[]) {
-  const seen = new Set(run!.tracks.map((t) => t.key));
-  const fresh: PlaylistTrack[] = [];
-  for (const t of tracks) {
-    if (seen.has(t.key)) continue;
-    seen.add(t.key);
-    fresh.push(t);
+  const seen = { keys: new Set<string>(), titles: new Set<string>() };
+  for (const t of run!.tracks) {
+    seen.keys.add(t.key);
+    const title = titleKey(t.name, t.artist);
+    if (title) seen.titles.add(title);
   }
-  return fresh;
+  return dedupe(tracks, (t) => t.artists[0], seen);
 }
 
 async function analyzePlaylist(item: RunItem, gen: number) {
