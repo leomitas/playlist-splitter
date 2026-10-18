@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ClassifiedTrack } from "@/lib/classify";
+import { createWarnings, type CreateWarnings } from "@/lib/create-warnings";
 import { chunk, findSplitterPlaylists, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
 import type { Group } from "@/lib/preview-state";
 import type { ApiError, ApiResult, Me } from "@/lib/spotify";
@@ -133,6 +134,9 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   const [checkError, setCheckError] = useState<ApiError | null>(null);
   const [modes, setModes] = useState<Record<string, Mode>>({});
   const [isPublic, setIsPublic] = useState(false);
+  // warnings computed when the confirmation opens; "Outros"/"Funk (incerto)" need an extra yes
+  const [warnings, setWarnings] = useState<CreateWarnings>({ lowConfidence: [], uncertain: [] });
+  const [uncertainOk, setUncertainOk] = useState(false);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   // group ids in execution order, and the index of the one being processed
   const [order, setOrder] = useState<string[]>([]);
@@ -180,6 +184,8 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   async function openConfirm() {
     const planned = planPlaylists(groups, tracks);
     setPlan(planned);
+    setWarnings(createWarnings(groups, tracks));
+    setUncertainOk(false);
     setPhase("checking");
     setSheetOpen(true);
     const r = await findExisting(planned);
@@ -474,6 +480,36 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 
             {phase === "confirm" && (
               <>
+                {warnings.uncertain.length > 0 && (
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-alerta/60 bg-alerta/10 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      className="check mt-0.5"
+                      checked={uncertainOk}
+                      onChange={(e) => setUncertainOk(e.target.checked)}
+                    />
+                    <span>
+                      <span className="font-bold text-alerta">
+                        {warnings.uncertain.map((w) => w.name).join(" e ")}{" "}
+                        {warnings.uncertain.length === 1 ? "está marcado" : "estão marcados"}.
+                      </span>{" "}
+                      Esses grupos juntam faixas sem gênero definido. Marque para confirmar que quer criá-los mesmo assim.
+                    </span>
+                  </label>
+                )}
+                {warnings.lowConfidence.length > 0 && (
+                  <div className="rounded-lg border border-alerta/40 bg-alerta/5 p-3 text-sm" role="note">
+                    <p className="font-bold text-alerta">Muitas faixas de baixa confiança</p>
+                    <ul className="mt-1 text-areia">
+                      {warnings.lowConfidence.map((w) => (
+                        <li key={w.groupId}>
+                          <span className="text-papel">{w.name}</span>: {Math.round(w.share * 100)}% com baixa confiança
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-xs text-areia">Dá para criar assim; se quiser, revise antes em &quot;Revisar baixa confiança&quot;.</p>
+                  </div>
+                )}
                 {checkError && (
                   <div className="rounded-lg border border-erro/40 bg-erro/10 p-3 text-sm">
                     <p>Não foi possível verificar playlists existentes; todas serão criadas como novas.</p>
@@ -640,7 +676,12 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                 <button className={ghost} onClick={closeSheet}>
                   Cancelar
                 </button>
-                <button className={`flex-1 sm:flex-none ${primary}`} disabled={!!disabledReason} onClick={run}>
+                <button
+                  className={`flex-1 sm:flex-none ${primary}`}
+                  disabled={!!disabledReason || (warnings.uncertain.length > 0 && !uncertainOk)}
+                  title={warnings.uncertain.length > 0 && !uncertainOk ? "Confirme os grupos sem gênero definido acima" : undefined}
+                  onClick={run}
+                >
                   {disabledReason ?? "Confirmar e criar"}
                 </button>
               </div>
