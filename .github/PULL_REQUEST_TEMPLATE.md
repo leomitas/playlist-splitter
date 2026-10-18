@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] `npm run lint`, `npx tsc --noEmit`, `npm test` and `npm run build` pass
+- [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npm run build` pass
 - [ ] No secrets, tokens or `.env.local` values in code, commits, screenshots or logs
 - [ ] No new Spotify calls, or they go through the queue and cache (`lib/spotify-client.ts`) and I explain the quota impact
 - [ ] Nothing writes to Spotify without the user's explicit confirmation

@@ -19,7 +19,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npx tsc --noEmit
+      # next typegen first: PageProps/LayoutProps live in .next/types, absent in a fresh checkout
+      - run: npm run typecheck
       - run: npm test
       # no secrets needed: the build doesn't call Spotify or Last.fm
       - run: npm run build

@@ -16,10 +16,12 @@ Before opening a PR:
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck
 npm test
 npm run build
 ```
+
+`npm run typecheck` runs `next typegen` before `tsc --noEmit`, because Next's global types (`PageProps`, `LayoutProps`) are generated into `.next/types` and don't exist in a fresh clone.
 
 `npm run format` (Prettier) is available; the existing code hasn't been reformatted in bulk yet, so format only the files you touch.
 

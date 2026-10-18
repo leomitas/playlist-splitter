@@ -20,7 +20,8 @@ Separar as músicas das playlists do Spotify (e das curtidas) por gênero e cria
    - O script já roda `next dev -H 127.0.0.1 -p 3000`.
    - Redirect URI cadastrada no Spotify Dashboard: `http://127.0.0.1:3000/api/auth/callback/spotify`
 3. `npm run doctor` confere o `.env.local` sem imprimir valores.
-4. Verificação: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build` (o build não precisa de variáveis; o CI roda os quatro).
+4. Verificação: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` (o build não precisa de variáveis; o CI roda os quatro).
+   - `typecheck` = `next typegen && tsc --noEmit`: `PageProps`/`LayoutProps` vêm de `.next/types`, que não existe num clone limpo. Não troque por `tsc` puro.
 
 Variáveis: `AUTH_SPOTIFY_ID`, `AUTH_SPOTIFY_SECRET`, `AUTH_SECRET`, `AUTH_URL`, `LASTFM_API_KEY`. Faltando qualquer uma, o `proxy.ts` manda as páginas para `/setup` e as rotas de API respondem 503.
 
