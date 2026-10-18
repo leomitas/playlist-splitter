@@ -36,6 +36,7 @@ const noopSubscribe = () => () => {};
 const PAGE = 100;
 const SAVE_DELAY_MS = 500;
 const NO_FAMILIES: string[] = [];
+type CardSelect = Pick<ReturnType<typeof useDragSelect>, "onPointerDown" | "onTap" | "onKeyToggle">;
 const toolLink =
   "text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline";
 
@@ -188,6 +189,21 @@ function PreviewEditor({
     setUndo(null);
     dispatch({ type: "setInclude", groupIds, on });
   }, []);
+
+  // Shift ranges and drags on the cards' checkboxes, in the order shown (search applied)
+  const visibleIds = useMemo(() => visibleGroups.map((g) => g.id), [visibleGroups]);
+  const cardSelect = useDragSelect({
+    ids: visibleIds,
+    isOn: (id) => includeNow.get(id) ?? false,
+    apply: applyInclude,
+    autoScroll: "page",
+  });
+  // stable object: the handlers never change, so memoized cards only re-render for their own state
+  const { onPointerDown: cardDown, onTap: cardTap, onKeyToggle: cardKey } = cardSelect;
+  const cardHandlers = useMemo<CardSelect>(
+    () => ({ onPointerDown: cardDown, onTap: cardTap, onKeyToggle: cardKey }),
+    [cardDown, cardTap, cardKey],
+  );
 
   const onlyThis = useCallback((groupId: string) => {
     const groups = latest.current.groups;
@@ -348,6 +364,8 @@ function PreviewEditor({
             <GroupCard
               key={g.id}
               group={g}
+              shownInclude={shownOn(cardSelect.preview, g.id, g.include)}
+              select={cardHandlers}
               expand={expand}
               onOnly={onlyThis}
               maxCount={maxCount}
@@ -495,6 +513,8 @@ function Stat({ value, label }: { value: number; label: string }) {
 // only while the group is open, PAGE at a time.
 const GroupCard = memo(function GroupCard({
   group: g,
+  shownInclude,
+  select,
   expand,
   onOnly,
   maxCount,
@@ -505,6 +525,9 @@ const GroupCard = memo(function GroupCard({
   dispatch,
 }: {
   group: Group;
+  // checked state to show (a drag in progress previews here before committing)
+  shownInclude: boolean;
+  select: CardSelect;
   // "Expandir/Recolher todos": applied when n changes
   expand: { open: boolean; n: number };
   onOnly: (groupId: string) => void;
@@ -541,21 +564,45 @@ const GroupCard = memo(function GroupCard({
       className="overflow-hidden rounded-xl border border-fio bg-grafite transition-colors hover:border-areia/40"
       style={{ "--check": color, borderLeft: `6px solid ${g.include ? color : "var(--color-fio)"}` } as CSSProperties}
     >
-      <summary className="flex cursor-pointer flex-col gap-2.5 p-3 pl-4">
+      <summary
+        className="flex cursor-pointer flex-col gap-2.5 p-3 pl-4 select-none"
+        // Shift+click elsewhere on the header must not select the text between two clicks
+        onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      >
         <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            className="check"
-            checked={g.include}
-            onChange={() => dispatch({ type: "toggleInclude", groupId: g.id })}
-            onClick={(e) => e.stopPropagation()}
-            aria-label={`Criar playlist de ${g.name}`}
-          />
+          {/* The mouse acts on this wrapper (pointerdown: toggle, Shift range, drag); the
+              checkbox ignores pointer events but keeps focus, Space and Shift+Space */}
+          <span
+            data-drag-id={g.id}
+            className="flex flex-none cursor-pointer"
+            onPointerDown={(e) => select.onPointerDown(g.id, e)}
+            onClick={(e) => {
+              // inside <summary>: don't open/close the card
+              e.preventDefault();
+              e.stopPropagation();
+              select.onTap(g.id, e);
+            }}
+          >
+            <input
+              type="checkbox"
+              className="check pointer-events-none"
+              checked={shownInclude}
+              onChange={() => select.onKeyToggle(g.id, false)}
+              onKeyDown={(e) => {
+                if (e.key !== " " || !e.shiftKey) return;
+                // Shift+Space: range; preventDefault keeps the box from toggling on its own
+                e.preventDefault();
+                select.onKeyToggle(g.id, true);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Criar playlist de ${g.name}`}
+            />
+          </span>
           <svg aria-hidden viewBox="0 0 16 16" className="chevron size-4 flex-none text-areia">
             <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
           <input
-            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-bold transition-colors hover:border-fio focus:border-areia focus:bg-cafe focus:outline-none"
+            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-bold transition-colors select-text hover:border-fio focus:border-areia focus:bg-cafe focus:outline-none"
             value={g.name}
             onChange={(e) => dispatch({ type: "rename", groupId: g.id, name: e.target.value })}
             onClick={(e) => e.preventDefault()}

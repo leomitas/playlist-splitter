@@ -4,7 +4,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FUNK_UNCERTAIN } from "@/lib/genre-families";
+import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
 import { Preview } from "@/app/preview";
 import { many } from "./helpers";
 
@@ -98,5 +98,105 @@ describe("spectrum bands", () => {
     await user.keyboard("{Escape}");
     await user.pointer({ keys: "[/MouseLeft]", target: band("Folk") });
     for (const name of ["Pop", "Jazz", "Folk"]) expect(pressed(band(name))).toBe("true");
+  });
+});
+
+describe("genre cards: checkboxes", () => {
+  // the mouse acts on the checkbox's wrapper (the checkbox itself ignores pointer events)
+  const box = (name: string) => screen.getByRole("checkbox", { name: `Criar playlist de ${name}` });
+  const hit = (name: string) => box(name).parentElement!;
+  const isChecked = (name: string) => (box(name) as HTMLInputElement).checked;
+  const cardOrder = () =>
+    screen.getAllByRole("checkbox", { name: /^Criar playlist de / }).map((c) => c.getAttribute("aria-label")!.slice(18));
+
+  it("recommended genres start checked; Funk (incerto) doesn't", () => {
+    renderPreview();
+    // "Outros" always exists (empty here) so tracks can be moved to it
+    expect(cardOrder()).toEqual(["Rock", "Pop", "Jazz", "Folk", FUNK_UNCERTAIN, OTHER]);
+    expect(["Rock", "Pop", "Jazz", "Folk"].every(isChecked)).toBe(true);
+    expect(isChecked(FUNK_UNCERTAIN)).toBe(false);
+    expect(isChecked(OTHER)).toBe(false);
+  });
+
+  it("Shift+click checks/unchecks the range in the order shown", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await user.click(hit("Rock")); // anchor, unchecks Rock
+    await user.keyboard("{Shift>}");
+    await user.click(hit("Jazz"));
+    await user.keyboard("{/Shift}");
+    expect(["Rock", "Pop", "Jazz"].map(isChecked)).toEqual([false, false, false]);
+    expect(isChecked("Folk")).toBe(true);
+  });
+
+  it("Shift+click respects the genre search (hidden cards are skipped)", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await user.click(screen.getByRole("button", { name: "Limpar" }));
+    await user.type(screen.getByRole("searchbox", { name: "Buscar gênero pelo nome" }), "o");
+    // "o" matches Rock, Pop, Folk, Funk (incerto) and Outros; Jazz is hidden
+    expect(cardOrder()).toEqual(["Rock", "Pop", "Folk", FUNK_UNCERTAIN, OTHER]);
+    await user.click(hit("Rock"));
+    await user.keyboard("{Shift>}");
+    await user.click(hit("Folk"));
+    await user.keyboard("{/Shift}");
+    await user.clear(screen.getByRole("searchbox", { name: "Buscar gênero pelo nome" }));
+    expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([true, true, false, true]);
+  });
+
+  it("Space toggles and Shift+Space selects a range from the keyboard", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    box("Pop").focus();
+    await user.keyboard(" ");
+    expect(isChecked("Pop")).toBe(false);
+    box("Folk").focus();
+    await user.keyboard("{Shift>} {/Shift}");
+    expect(["Pop", "Jazz", "Folk"].map(isChecked)).toEqual([false, false, false]);
+    expect(isChecked("Rock")).toBe(true);
+    expect(document.activeElement).toBe(box("Folk"));
+  });
+
+  it("dragging over checkboxes applies the first one's new state; Esc restores", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await user.pointer([{ keys: "[MouseLeft>]", target: hit("Pop") }, { target: hit("Jazz") }, { target: hit("Folk") }]);
+    await frame();
+    await frame();
+    await user.pointer({ keys: "[/MouseLeft]", target: hit("Folk") });
+    expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([true, false, false, false]);
+
+    await user.pointer([{ keys: "[MouseLeft>]", target: hit("Rock") }, { target: hit("Jazz") }]);
+    await frame();
+    await frame();
+    expect(isChecked("Pop")).toBe(false);
+    await user.keyboard("{Escape}");
+    await user.pointer({ keys: "[/MouseLeft]", target: hit("Jazz") });
+    expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([true, false, false, false]);
+  });
+
+  it("touch doesn't start a drag (the page keeps scrolling); a tap toggles once", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    // finger down on Pop, sliding over Jazz: no drag selection
+    await user.pointer([{ keys: "[TouchA>]", target: hit("Pop") }, { pointerName: "TouchA", target: hit("Jazz") }]);
+    await frame();
+    await frame();
+    expect(["Pop", "Jazz"].map(isChecked)).toEqual([true, true]);
+    await user.pointer({ keys: "[/TouchA]", target: hit("Jazz") });
+    // (the simulator fires a click where the finger lifts; a real scrolling touch doesn't)
+    expect(isChecked("Pop")).toBe(true);
+
+    await user.pointer({ keys: "[TouchA]", target: hit("Folk") });
+    expect(isChecked("Folk")).toBe(false);
+  });
+
+  it("Só este checks one genre, and Desfazer brings the previous selection back", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await user.click(screen.getByRole("button", { name: "Marcar só Jazz" }));
+    expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([false, false, true, false]);
+    await user.click(screen.getByRole("button", { name: "Desfazer" }));
+    expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([true, true, true, true]);
   });
 });
