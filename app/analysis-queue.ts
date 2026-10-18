@@ -4,12 +4,15 @@
 
 import { classifyTrack, hasFamilyTag, type ClassifiedTrack } from "@/lib/classify";
 import { idbClear, idbGet, idbSet } from "@/lib/idb";
+import { readNewSince, trackIdentity } from "@/lib/incremental-sync";
 import { getArtistTags, getTrackTags } from "@/lib/lastfm-client";
 import type { Lookup } from "@/lib/lastfm";
 import type { SkippedItem } from "@/lib/paged-reader";
-import type { ApiError, Playlist, PlaylistTrack } from "@/lib/spotify";
+import { LIKED_ID, type ApiError, type Playlist, type PlaylistTrack } from "@/lib/spotify";
 import { clearSessionCache } from "@/lib/spotify-cache";
-import { loadTracks } from "./spotify-data";
+import { spotify } from "@/lib/spotify-client";
+import { getLikedPage } from "./actions";
+import { forgetTracks, getCachedTracks, likedSnapshot, loadTracks, rememberLikedSummary, saveCachedTracks } from "./spotify-data";
 
 export type ItemStatus = "pendente" | "analisando" | "concluída" | "erro" | "cancelada";
 
@@ -54,7 +57,15 @@ export type Run = {
   totalTracks: number;
   // progress inside the playlist being analyzed (not persisted)
   current?: { step: "faixas" | "gêneros"; done: number; total: number | null };
+  // last "Sincronizar curtidas"
+  sync?: LikedSync;
 };
+
+export type LikedSync =
+  | { state: "lendo"; fresh: number }
+  | { state: "gêneros"; done: number; total: number }
+  | { state: "concluída"; added: number; at: number }
+  | { state: "erro"; error: ApiError };
 
 const RUN_KEY = "run";
 
@@ -95,40 +106,10 @@ async function checkpoint(gen: number) {
 
 const playlistTotal = (p: Playlist) => (p.items ?? p.tracks)?.total ?? null;
 
-async function analyzePlaylist(item: RunItem, gen: number) {
-  const stop = () => checkpoint(gen);
-  const stale = () => gen !== generation;
-  const started = Date.now();
-
-  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined, skipped: undefined, untagged: undefined });
-  set({ ...run!, current: { step: "faixas", done: 0, total: item.total } });
-
-  const read = await loadTracks(
-    { id: item.id, snapshot_id: item.snapshotId, total: item.total },
-    {
-      checkpoint: stop,
-      onProgress: (done, total) => !stale() && set({ ...run!, current: { step: "faixas", done, total } }),
-    },
-  );
-  if (stale()) return;
-  if (!read.ok) {
-    patchItem(item.id, { status: "erro", error: read, errorCount: 1 });
-    set({ ...run!, current: undefined });
-    persist();
-    return;
-  }
-
-  // dedupe within the playlist and against everything already analyzed
-  const seen = new Set(run!.tracks.map((t) => t.key));
-  const fresh: PlaylistTrack[] = [];
-  for (const t of read.data.tracks) {
-    if (seen.has(t.key)) continue;
-    seen.add(t.key);
-    fresh.push(t);
-  }
-
-  // Per-track Last.fm failures never fail the playlist; only a lost session does
-  // (every lookup would fail, so continuing would just mark everything "sem tags")
+// Last.fm lookups + classification for tracks not seen before in the run. Per-track failures
+// never fail the batch; only a lost session does (every lookup would fail, so continuing would
+// just mark everything "sem tags").
+async function classifyFresh(fresh: PlaylistTrack[], stop: () => Promise<boolean>, onDone: (done: number) => void) {
   let fatal: ApiError | null = null;
   const untagged: UntaggedTrack[] = [];
   const noteFailure = (t: PlaylistTrack, e: ApiError, what: "artista" | "faixa") => {
@@ -142,7 +123,6 @@ async function analyzePlaylist(item: RunItem, gen: number) {
       });
   };
   let done = 0;
-  set({ ...run!, current: { step: "gêneros", done: 0, total: fresh.length } });
 
   const classified = await Promise.all(
     fresh.map(async (t) => {
@@ -166,10 +146,61 @@ async function analyzePlaylist(item: RunItem, gen: number) {
         }
       }
 
-      done++;
-      if (!stale()) set({ ...run!, current: { step: "gêneros", done, total: fresh.length } });
-      return classifyTrack({ key: t.key, uri: t.uri, name: t.name, artist, artistTags, trackTags });
+      onDone(++done);
+      return classifyTrack({ key: t.key, uri: t.uri, name: t.name, artist, artistId: t.artistId, artistTags, trackTags });
     }),
+  );
+  return { classified, untagged, fatal: fatal as ApiError | null };
+}
+
+// dedupe within the batch and against everything already analyzed
+function unseen(tracks: PlaylistTrack[]) {
+  const seen = new Set(run!.tracks.map((t) => t.key));
+  const fresh: PlaylistTrack[] = [];
+  for (const t of tracks) {
+    if (seen.has(t.key)) continue;
+    seen.add(t.key);
+    fresh.push(t);
+  }
+  return fresh;
+}
+
+async function analyzePlaylist(item: RunItem, gen: number) {
+  const stop = () => checkpoint(gen);
+  const stale = () => gen !== generation;
+  const started = Date.now();
+
+  patchItem(item.id, { status: "analisando", error: undefined, errorCount: undefined, skipped: undefined, untagged: undefined });
+  set({ ...run!, current: { step: "faixas", done: 0, total: item.total } });
+
+  const read = await loadTracks(
+    { id: item.id, snapshot_id: item.snapshotId, total: item.total },
+    {
+      checkpoint: stop,
+      onProgress: (done, total) => !stale() && set({ ...run!, current: { step: "faixas", done, total } }),
+    },
+  );
+  if (stale()) return;
+  if (!read.ok) {
+    if (read.blockedUntil) {
+      // Spotify blocked the app: stop here and keep the playlist queued; "Retomar" is
+      // available again once the block ends. Pages already read are kept.
+      patchItem(item.id, { status: "pendente" });
+      set({ ...run!, phase: "paused", current: undefined });
+    } else {
+      patchItem(item.id, { status: "erro", error: read, errorCount: 1 });
+      set({ ...run!, current: undefined });
+    }
+    persist();
+    return;
+  }
+
+  const fresh = unseen(read.data.tracks);
+  set({ ...run!, current: { step: "gêneros", done: 0, total: fresh.length } });
+  const { classified, untagged, fatal } = await classifyFresh(
+    fresh,
+    stop,
+    (done) => !stale() && set({ ...run!, current: { step: "gêneros", done, total: fresh.length } }),
   );
   if (stale()) return;
 
@@ -226,9 +257,11 @@ export const analysis = {
     const saved = await idbGet<Run>("state", RUN_KEY);
     if (!saved || run) return;
     const interrupted = saved.phase === "running" || saved.phase === "paused";
+    const syncInterrupted = saved.sync?.state === "lendo" || saved.sync?.state === "gêneros";
     set({
       ...saved,
       phase: interrupted ? "paused" : saved.phase,
+      sync: syncInterrupted ? undefined : saved.sync,
       items: saved.items.map((i) => (i.status === "analisando" ? { ...i, status: "pendente" } : i)),
     });
   },
@@ -315,6 +348,88 @@ export const analysis = {
   async clearCache() {
     await idbClear("cache");
     clearSessionCache();
+  },
+
+  // "Sincronizar curtidas": reads liked songs newest first until a known track, classifies only
+  // the new ones and adds them to the run. Unliked tracks aren't detected (full re-analysis does).
+  async syncLiked() {
+    const item = run?.items.find((i) => i.id === LIKED_ID);
+    if (!run || !item || item.status !== "concluída" || run.phase === "running" || run.phase === "paused") return;
+    if (run.sync?.state === "lendo" || run.sync?.state === "gêneros") return;
+    const gen = generation;
+    const stale = () => gen !== generation;
+    const setSync = (sync: LikedSync) => !stale() && set({ ...run!, sync });
+
+    const cachedLiked = await getCachedTracks(LIKED_ID);
+    if (!cachedLiked) {
+      setSync({
+        state: "erro",
+        error: { url: "/me/tracks", status: null, raw: "Faixas curtidas não estão no cache deste navegador. Use a reanálise completa." },
+      });
+      return;
+    }
+
+    setSync({ state: "lendo", fresh: 0 });
+    const read = await readNewSince({
+      fetchPage: (offset, limit) => spotify.call(() => getLikedPage(offset, limit), "/me/tracks"),
+      known: new Set(cachedLiked.tracks.map(trackIdentity)),
+      checkpoint: async () => stale(),
+      onProgress: (fresh) => setSync({ state: "lendo", fresh }),
+    });
+    if (stale()) return;
+    if (!read.ok) {
+      setSync({ state: "erro", error: read });
+      persist();
+      return;
+    }
+
+    const { fresh: newLiked, total, firstAddedAt } = read.data;
+    const fresh = unseen(newLiked);
+    setSync({ state: "gêneros", done: 0, total: fresh.length });
+    const { classified, untagged, fatal } = await classifyFresh(
+      fresh,
+      async () => stale(),
+      (done) => setSync({ state: "gêneros", done, total: fresh.length }),
+    );
+    if (stale()) return;
+    if (fatal) {
+      setSync({ state: "erro", error: fatal });
+      persist();
+      return;
+    }
+
+    // the new version marker, so neither the picker nor "Retomar" think liked songs changed
+    const snapshotId = likedSnapshot({ total, firstAddedAt });
+    await saveCachedTracks(LIKED_ID, { snapshotId, tracks: [...newLiked, ...cachedLiked.tracks], skipped: cachedLiked.skipped });
+    rememberLikedSummary({ total, firstAddedAt });
+    if (stale()) return;
+
+    const current = run!.items.find((i) => i.id === LIKED_ID)!;
+    set({
+      ...run!,
+      tracks: [...run!.tracks, ...classified],
+      totalTracks: run!.totalTracks + newLiked.length,
+      items: run!.items.map((i) =>
+        i.id === LIKED_ID
+          ? {
+              ...i,
+              snapshotId,
+              total,
+              trackCount: (current.trackCount ?? 0) + newLiked.length,
+              untagged: [...(current.untagged ?? []), ...untagged],
+            }
+          : i,
+      ),
+      sync: { state: "concluída", added: classified.length, at: Date.now() },
+    });
+    persist();
+  },
+
+  // The secondary option: forgets the cached liked songs and analyzes the same playlists again
+  async fullReanalyze(playlists: Playlist[]) {
+    if (run && (run.phase === "running" || run.phase === "paused")) return;
+    await forgetTracks(LIKED_ID);
+    analysis.start(playlists);
   },
 };
 

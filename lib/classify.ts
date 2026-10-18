@@ -13,10 +13,15 @@ export type ClassifiedTrack = {
   uri: string | null;
   name: string;
   artist: string;
+  // first artist's Spotify id, when known
+  artistId?: string;
   family: string;
   // whitelisted tags that contributed, artist's first
   tags: string[];
   lowConfidence?: string;
+  // set when the artist consensus (lib/artist-consensus.ts) gave the track its family:
+  // the family and low-confidence reason it had before
+  inferredFrom?: { family: string; lowConfidence?: string };
 };
 
 export function normalizeName(s: string) {
@@ -39,6 +44,7 @@ export function classifyTrack(input: {
   uri: string | null;
   name: string;
   artist: string;
+  artistId?: string;
   artistTags: Lookup | null;
   trackTags: Lookup | null;
 }): ClassifiedTrack {
@@ -74,6 +80,7 @@ export function classifyTrack(input: {
     uri: input.uri,
     name: input.name,
     artist: input.artist,
+    ...(input.artistId && { artistId: input.artistId }),
     family,
     tags,
   };

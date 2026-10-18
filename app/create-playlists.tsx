@@ -4,13 +4,13 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { chunk, findSplitterPlaylists, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
 import type { Group } from "@/lib/preview-state";
-import type { ApiError, ApiResult } from "@/lib/spotify";
+import type { ApiError, ApiResult, Me } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
 import { genreColor } from "./genre-colors";
 import { RateLimitNotice } from "./rate-limit-notice";
-import { invalidatePlaylists, loadMe, loadPlaylists, loadTracks } from "./spotify-data";
+import { loadCreatedUris, loadMe, loadPlaylists, rememberCreated, type CreatedPlaylist } from "./spotify-data";
 
 type Mode = "update" | "create";
 
@@ -64,14 +64,19 @@ type ExistingMatch = {
   newUris: string[];
   // how many of the user's playlists matched; only the first is used
   matches: number;
+  // the playlist as it is now, so later batches keep its cache entry current
+  current: CreatedPlaylist;
 };
 
-// Read-only: looks for playlists this app created earlier with the same name
-async function findExisting(planned: PlannedPlaylist[]): Promise<ApiResult<Record<string, ExistingMatch | null>>> {
+// Read-only: looks for playlists this app created earlier with the same name. Uses the session's
+// playlist list (patched after every write) and the created-playlist cache, so nothing is read
+// again unless a playlist's snapshot changed.
+async function findExisting(
+  planned: PlannedPlaylist[],
+): Promise<ApiResult<{ me: Me; found: Record<string, ExistingMatch | null> }>> {
   const me = await loadMe();
   if (!me.ok) return me;
-  // fresh list: playlists created moments ago (or edited in the app) must be seen
-  const playlists = await loadPlaylists(true);
+  const playlists = await loadPlaylists();
   if (!playlists.ok) return playlists;
 
   const result: Record<string, ExistingMatch | null> = {};
@@ -81,19 +86,20 @@ async function findExisting(planned: PlannedPlaylist[]): Promise<ApiResult<Recor
       result[p.groupId] = null;
       continue;
     }
-    const existing = await loadTracks(found[0]);
+    const existing = await loadCreatedUris(found[0], me.data);
     if (!existing.ok) return existing;
     result[p.groupId] = {
       playlistId: found[0].id,
       url: `https://open.spotify.com/playlist/${found[0].id}`,
       newUris: missingUris(
         p.uris.filter((u) => TRACK_URI.test(u)),
-        existing.data.tracks.map((t) => t.uri).filter((u): u is string => !!u),
+        existing.data,
       ),
       matches: found.length,
+      current: { id: found[0].id, name: found[0].name, snapshotId: found[0].snapshot_id, uris: existing.data },
     };
   }
-  return { ok: true, data: result };
+  return { ok: true, data: { me: me.data, found: result } };
 }
 
 function RawError({ error }: { error: ApiError }) {
@@ -137,6 +143,9 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   const running = useRef(false);
   const jobs = useRef<Job[]>([]);
   const stats = useRef<Clock>({ total: 0, done: 0, doneAtStart: 0, startedAt: 0 });
+  // owner for the playlist-list patch, and each group's playlist as Spotify last confirmed it
+  const owner = useRef<Me | null>(null);
+  const records = useRef(new Map<string, CreatedPlaylist>());
   // what the action bar announces: playlists with at least one valid track, and their tracks
   const outline = useMemo(() => {
     const planned = planPlaylists(groups, tracks).filter((p) => p.uris.length > 0);
@@ -172,11 +181,18 @@ export const CreatePlaylists = memo(function CreatePlaylists({
     setPhase("checking");
     setSheetOpen(true);
     const r = await findExisting(planned);
-    const found = r.ok ? r.data : {};
+    const found = r.ok ? r.data.found : {};
+    if (r.ok) owner.current = r.data.me;
     setCheckError(r.ok ? null : r);
     setExisting(found);
     setModes(Object.fromEntries(planned.map((p) => [p.groupId, found[p.groupId] ? "update" : "create"])));
     setPhase("confirm");
+  }
+
+  // keeps the created-playlist cache and the session's playlist list in step with Spotify
+  async function remember(groupId: string, record: CreatedPlaylist) {
+    records.current.set(groupId, record);
+    if (owner.current) await rememberCreated(record, owner.current);
   }
 
   async function addInBatches(groupId: string, playlistId: string, uris: string[], alreadyAdded: number, onCall: () => void) {
@@ -189,6 +205,8 @@ export const CreatePlaylists = memo(function CreatePlaylists({
       added += batches[i].length;
       onCall();
       update(groupId, { added });
+      const record = records.current.get(groupId);
+      if (record) await remember(groupId, { ...record, snapshotId: r.data.snapshot_id, uris: [...record.uris, ...batches[i]] });
     }
     return { added, error: undefined };
   }
@@ -217,6 +235,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
     }
 
     let playlistId = from?.playlistId ?? match?.playlistId;
+    if (match && !records.current.has(p.groupId)) records.current.set(p.groupId, match.current);
     if (!playlistId) {
       update(p.groupId, { status: "criando" });
       const created = await spotify.call(() => createPlaylist(p.name, isPublic), "/me/playlists");
@@ -228,6 +247,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
       onCall();
       playlistId = created.data.id;
       update(p.groupId, { url: created.data.url, playlistId });
+      await remember(p.groupId, { id: playlistId, name: created.data.name, snapshotId: created.data.snapshot_id, uris: [] });
     }
     const already = from?.added ?? 0;
     const { added, error } = await addInBatches(p.groupId, playlistId, uris.slice(already), already, onCall);
@@ -239,7 +259,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
     // stays in the summary (never back to idle) so the same playlists aren't created twice by accident
     setPhase("done");
     running.current = false;
-    invalidatePlaylists();
+    // the session's playlist list was patched along the way; no new listing
     onDone();
   }
 
@@ -586,7 +606,12 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                           <div className="ml-5.5 flex flex-col items-start gap-2 rounded-lg border border-erro/40 bg-erro/10 p-2.5">
                             <RawError error={pr.error} />
                             {phase === "done" && (
-                              <button className="rounded-full border border-fio px-3 py-1 text-sm transition-colors hover:border-areia hover:bg-grafite-2" onClick={() => retry(id)}>
+                              <button
+                                className="rounded-full border border-fio px-3 py-1 text-sm transition-colors hover:border-areia hover:bg-grafite-2 disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!!disabledReason}
+                                title={disabledReason}
+                                onClick={() => retry(id)}
+                              >
                                 Tentar de novo
                               </button>
                             )}

@@ -32,7 +32,7 @@ type Track = {
   artists: { id: string | null; name: string }[];
 };
 // Feb 2026 API renamed playlist "track" to "item"; accept both
-type PlaylistItem = { item?: Track | null; track?: Track | null };
+type PlaylistItem = { item?: Track | null; track?: Track | null; added_at?: string };
 type Page<T> = { items: T[]; total: number; next: string | null };
 
 export type ApiError = {
@@ -42,11 +42,15 @@ export type ApiError = {
   raw: string;
   // seconds, from the Retry-After header of a 429
   retryAfter?: number;
+  // set when the call was refused because Spotify blocked the app until this time (ms)
+  blockedUntil?: number;
 };
 export type ApiResult<T> = { ok: true; data: T } | ({ ok: false } & ApiError);
 
-export type PageResult<T> = { items: T[]; total: number; nextOffset: number | null };
-export type PlaylistTrack = { key: string; uri: string | null; name: string; artists: string[] };
+// firstAddedAt: added_at of the page's first item (liked songs use it as a version marker)
+export type PageResult<T> = { items: T[]; total: number; nextOffset: number | null; firstAddedAt?: string };
+// artistId: first artist's Spotify id (missing for local files and in caches older than the field)
+export type PlaylistTrack = { key: string; uri: string | null; name: string; artists: string[]; artistId?: string };
 
 async function spotifyRequest<T>(
   method: "GET" | "POST",
@@ -99,12 +103,14 @@ async function getPage<T, R>(
   const r = await spotifyGet<Page<T>>(`${path}${sep}limit=${limit}&offset=${offset}`, token);
   if (!r.ok) return r;
   const next = offset + r.data.items.length;
+  const firstAddedAt = (r.data.items[0] as { added_at?: string } | null | undefined)?.added_at;
   return {
     ok: true,
     data: {
       items: map(r.data.items),
       total: r.data.total,
       nextOffset: r.data.next && r.data.items.length > 0 ? next : null,
+      ...(firstAddedAt && { firstAddedAt }),
     },
   };
 }
@@ -125,6 +131,7 @@ const toPlaylistTracks = (items: PlaylistItem[]): PlaylistTrack[] =>
       uri: t.uri ?? null,
       name: t.name,
       artists: t.artists.map((a) => a.name),
+      ...(t.artists[0].id && { artistId: t.artists[0].id }),
     }));
 
 export const getPlaylistTracksPage = (playlistId: string, offset: number, token: string, limit = PAGE_SIZE) =>

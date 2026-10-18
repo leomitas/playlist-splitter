@@ -2,6 +2,7 @@
 
 import {
   memo,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -12,9 +13,19 @@ import {
   type CSSProperties,
   type Dispatch,
 } from "react";
+import type { ConsensusStats } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
+import { buildExport } from "@/lib/export";
 import { OTHER } from "@/lib/genre-families";
-import { initialState, reducer, type Action, type Group, type PreviewState } from "@/lib/preview-state";
+import {
+  initialState,
+  pendingSync,
+  reducer,
+  upgradeSaved,
+  type Action,
+  type Group,
+  type PreviewState,
+} from "@/lib/preview-state";
 import { CreatePlaylists } from "./create-playlists";
 import { genreColor } from "./genre-colors";
 
@@ -33,14 +44,22 @@ function loadSaved(storageKey: string, tracks: ClassifiedTrack[]): PreviewState 
     const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null") as PreviewState | null;
     if (!saved?.groups) return null;
     const keys = new Set(tracks.map((t) => t.key));
-    return {
-      groups: saved.groups.map((g) => ({ ...g, trackKeys: g.trackKeys.filter((k) => keys.has(k)) })),
-      autoMoved: saved.autoMoved ?? {},
-      aliases: saved.aliases ?? {},
-    };
+    return upgradeSaved(
+      { ...saved, groups: saved.groups.map((g) => ({ ...g, trackKeys: g.trackKeys.filter((k) => keys.has(k)) })) },
+      tracks,
+    );
   } catch {
     return null;
   }
+}
+
+function downloadJson(data: unknown, filename: string) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function save(storageKey: string, state: PreviewState) {
@@ -56,6 +75,8 @@ type PreviewProps = {
   tracks: ClassifiedTrack[];
   // tracks read more than once across the analyzed playlists
   duplicates: number;
+  // what the artist consensus changed in `tracks`
+  consensus: ConsensusStats;
   storageKey: string;
   // set while creating playlists isn't allowed (analysis still running)
   createDisabledReason?: string;
@@ -71,17 +92,16 @@ export const Preview = memo(function Preview(props: PreviewProps) {
   return <PreviewEditor {...props} />;
 });
 
-function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, onSpotifyChanged }: PreviewProps) {
+function PreviewEditor({ tracks, duplicates, consensus, storageKey, createDisabledReason, onSpotifyChanged }: PreviewProps) {
   const fresh = useMemo(() => initialState(tracks), [tracks]);
   const [state, dispatch] = useReducer(reducer, null, () => loadSaved(storageKey, tracks) ?? fresh);
   const byKey = useMemo(() => new Map(tracks.map((t) => [t.key, t])), [tracks]);
 
-  // new playlists finished: slot their tracks in without touching the user's edits
+  // New playlists finished, or the artist consensus changed some families: slot the tracks in
+  // without touching the user's edits (tracks moved by hand are never re-placed)
   useEffect(() => {
-    const known = new Set(state.groups.flatMap((g) => g.trackKeys));
-    const added = tracks.filter((t) => !known.has(t.key));
-    if (added.length > 0) dispatch({ type: "addTracks", tracks: added });
-  }, [tracks, state.groups]);
+    if (pendingSync(state, tracks).length > 0) dispatch({ type: "sync", tracks });
+  }, [tracks, state]);
 
   // Saved after a pause, off the click path; leaving the page flushes the pending save.
   // No flush on unmount: that happens when a new run replaces this one and drops its key.
@@ -123,6 +143,7 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
     return { total, bands, genres };
   }, [deferredGroups]);
   const lowConfidence = useMemo(() => tracks.filter((t) => t.lowConfidence).length, [tracks]);
+  const withoutFamily = useMemo(() => tracks.filter((t) => t.family === OTHER).length, [tracks]);
   // composition bars are relative to the largest group; a number, so cards only re-render when it changes
   const maxCount = Math.max(1, ...state.groups.map((g) => g.trackKeys.length));
 
@@ -136,6 +157,15 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
           <Stat value={lowConfidence} label="com baixa confiança" />
           <Stat value={duplicates} label="repetidas removidas" />
         </dl>
+        {consensus.inferred > 0 && (
+          <p className="text-sm text-areia">
+            <span className="font-bold text-papel">Consenso por artista:</span>{" "}
+            {fmt(consensus.inferred)} {consensus.inferred === 1 ? "faixa inferida" : "faixas inferidas"} pelo artista ·
+            sem família {fmt(withoutFamily + consensus.fromOther)} → {fmt(withoutFamily)} (
+            {fmt(consensus.fromOther)} saíram de {OTHER}) · baixa confiança {fmt(lowConfidence + consensus.noLongerLow)} →{" "}
+            {fmt(lowConfidence)}
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="genres-title" className="flex flex-col gap-3">
@@ -146,12 +176,22 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
               {deferredGroups.filter((g) => g.include).length} de {deferredGroups.length} marcados
             </span>
           </h2>
-          <button
-            className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
-            onClick={() => dispatch({ type: "reset", state: fresh })}
-          >
-            Desfazer edições
-          </button>
+          <div className="flex gap-4">
+            <button
+              className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
+              onClick={() =>
+                downloadJson(buildExport(state.groups, byKey), `classificacao-${new Date().toISOString().slice(0, 10)}.json`)
+              }
+            >
+              Exportar classificação (JSON)
+            </button>
+            <button
+              className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
+              onClick={() => dispatch({ type: "reset", state: fresh })}
+            >
+              Desfazer edições
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -167,6 +207,16 @@ function PreviewEditor({ tracks, duplicates, storageKey, createDisabledReason, o
               dispatch={dispatch}
             />
           ))}
+          {lowConfidence > 0 && (
+            <LowConfidenceCard
+              count={lowConfidence}
+              groups={state.groups}
+              groupOptions={groupOptions}
+              byKey={byKey}
+              autoMoved={state.autoMoved}
+              dispatch={dispatch}
+            />
+          )}
         </div>
       </section>
 
@@ -275,7 +325,6 @@ const GroupCard = memo(function GroupCard({
   const [open, setOpen] = useState(false);
   // the chevron turns on the click itself; the rows render right after that frame
   const showRows = useDeferredValue(open);
-  const [limit, setLimit] = useState(PAGE);
   const [mergeTarget, setMergeTarget] = useState("");
   // the chosen target may have been merged away meanwhile
   const target = groupOptions.some((o) => o.id === mergeTarget && o.id !== g.id) ? mergeTarget : "";
@@ -285,6 +334,7 @@ const GroupCard = memo(function GroupCard({
     [g.trackKeys, byKey],
   );
   const count = g.trackKeys.length;
+  const entries = useMemo(() => (showRows ? g.trackKeys.map((key) => ({ key, groupId: g.id })) : NO_ENTRIES), [showRows, g.trackKeys, g.id]);
 
   return (
     <details
@@ -379,46 +429,313 @@ const GroupCard = memo(function GroupCard({
             </div>
           )}
 
-          <ul className="flex flex-col">
-            {g.trackKeys.slice(0, limit).map((k) => {
-              const t = byKey.get(k);
-              return t ? (
-                <TrackRow
-                  key={k}
-                  track={t}
-                  groupId={g.id}
-                  autoMovedFrom={autoMoved[k]}
-                  groupOptions={groupOptions}
-                  dispatch={dispatch}
-                />
-              ) : null;
-            })}
-          </ul>
-          {count > limit && (
-            <button
-              className="m-3 rounded-full border border-fio px-4 py-1.5 text-sm transition-colors hover:border-papel"
-              onClick={() => setLimit(limit + PAGE)}
-            >
-              Mostrar mais {Math.min(PAGE, count - limit)} (exibindo {limit} de {count.toLocaleString("pt-BR")})
-            </button>
-          )}
+          <ReviewList
+            entries={entries}
+            currentGroupId={g.id}
+            byKey={byKey}
+            groupOptions={groupOptions}
+            autoMoved={autoMoved}
+            dispatch={dispatch}
+          />
         </div>
       )}
     </details>
   );
 });
 
+type Entry = { key: string; groupId: string };
+const NO_ENTRIES: Entry[] = [];
+
+// Every low-confidence track of every group in one list, with the same review tools
+const LowConfidenceCard = memo(function LowConfidenceCard({
+  count,
+  groups,
+  groupOptions,
+  byKey,
+  autoMoved,
+  dispatch,
+}: {
+  count: number;
+  groups: Group[];
+  groupOptions: GroupOption[];
+  byKey: Map<string, ClassifiedTrack>;
+  autoMoved: Record<string, string>;
+  dispatch: Dispatch<Action>;
+}) {
+  const [open, setOpen] = useState(false);
+  const showRows = useDeferredValue(open);
+  // built only while open: closed, a move elsewhere costs nothing here
+  const entries = useMemo(
+    () =>
+      showRows
+        ? groups.flatMap((g) => g.trackKeys.filter((k) => byKey.get(k)?.lowConfidence).map((key) => ({ key, groupId: g.id })))
+        : NO_ENTRIES,
+    [showRows, groups, byKey],
+  );
+  const groupName = useMemo(() => new Map(groupOptions.map((o) => [o.id, o.name])), [groupOptions]);
+
+  return (
+    <details
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="overflow-hidden rounded-xl border border-dashed border-alerta/50 bg-grafite transition-colors hover:border-alerta"
+      style={{ "--check": "var(--color-alerta)" } as CSSProperties}
+    >
+      <summary className="flex cursor-pointer items-center gap-3 p-3 pl-4">
+        <svg aria-hidden viewBox="0 0 16 16" className="chevron size-4 flex-none text-areia">
+          <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <span className="flex-1 text-lg font-bold">Revisar baixa confiança de todos os grupos</span>
+        <span className="num text-4xl text-alerta">{fmt(count)}</span>
+      </summary>
+      {showRows && (
+        <div className="border-t border-fio">
+          <ReviewList
+            entries={entries}
+            groupName={groupName}
+            byKey={byKey}
+            groupOptions={groupOptions}
+            autoMoved={autoMoved}
+            dispatch={dispatch}
+            onlyLow
+          />
+        </div>
+      )}
+    </details>
+  );
+});
+
+type Filter = "all" | "low" | "inferred";
+const NEW_GROUP = "\u0000new";
+// case- and accent-insensitive; keeps non-Latin scripts searchable
+const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const folded = new WeakMap<ClassifiedTrack, string>();
+function searchable(t: ClassifiedTrack) {
+  let s = folded.get(t);
+  if (s === undefined) folded.set(t, (s = fold(`${t.name} ${t.artist}`)));
+  return s;
+}
+
+// Search, filters, per-track checkboxes and a bulk "move" bar over a list of tracks
+// (one group's, or the low-confidence ones of every group). Rows render PAGE at a time.
+const ReviewList = memo(function ReviewList({
+  entries,
+  currentGroupId,
+  groupName,
+  byKey,
+  groupOptions,
+  autoMoved,
+  dispatch,
+  onlyLow,
+}: {
+  entries: Entry[];
+  // set inside a group card: that group is left out of the "move to" options
+  currentGroupId?: string;
+  // set in the combined list: each row shows the group it's in
+  groupName?: Map<string, string>;
+  byKey: Map<string, ClassifiedTrack>;
+  groupOptions: GroupOption[];
+  autoMoved: Record<string, string>;
+  dispatch: Dispatch<Action>;
+  onlyLow?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [limit, setLimit] = useState(PAGE);
+  const [target, setTarget] = useState("");
+  const [newName, setNewName] = useState("");
+  // typing stays responsive; the list follows a frame later
+  const deferredQuery = useDeferredValue(query);
+
+  const counts = useMemo(() => {
+    let low = 0;
+    let inferred = 0;
+    for (const e of entries) {
+      const t = byKey.get(e.key);
+      if (t?.lowConfidence) low++;
+      if (t?.inferredFrom) inferred++;
+    }
+    return { low, inferred };
+  }, [entries, byKey]);
+
+  const filtered = useMemo(() => {
+    const q = fold(deferredQuery);
+    return entries.filter((e) => {
+      const t = byKey.get(e.key);
+      if (!t) return false;
+      if (filter === "low" && !t.lowConfidence) return false;
+      if (filter === "inferred" && !t.inferredFrom) return false;
+      return !q || searchable(t).includes(q);
+    });
+  }, [entries, byKey, filter, deferredQuery]);
+
+  // only what's still listed counts as selected (moved tracks leave the list by themselves)
+  const listed = useMemo(() => new Set(filtered.map((e) => e.key)), [filtered]);
+  const chosen = useMemo(() => [...selected].filter((k) => listed.has(k)), [selected, listed]);
+  const allChosen = filtered.length > 0 && chosen.length === filtered.length;
+
+  const toggle = useCallback(
+    (key: string) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(key)) next.add(key);
+        return next;
+      }),
+    [],
+  );
+
+  const done = () => {
+    setSelected(new Set());
+    setTarget("");
+    setNewName("");
+  };
+  const moveTo = (toGroupId: string) => {
+    dispatch({ type: "moveMany", trackKeys: chosen, toGroupId });
+    done();
+  };
+  const apply = () => {
+    if (target === NEW_GROUP) dispatch({ type: "createGroup", name: newName, trackKeys: chosen });
+    else dispatch({ type: "moveMany", trackKeys: chosen, toGroupId: target });
+    done();
+  };
+  const targets = groupOptions.filter((o) => o.id !== currentGroupId);
+  const field = "rounded-md border border-fio bg-cafe px-2 py-1";
+  const pill =
+    "rounded-full border border-fio px-3 py-1 transition-colors hover:border-papel disabled:opacity-40 disabled:hover:border-fio";
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+        <input
+          type="search"
+          className={`${field} min-w-0 flex-1 sm:max-w-64`}
+          placeholder="Buscar artista ou faixa"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setLimit(PAGE);
+          }}
+          aria-label="Buscar artista ou faixa"
+        />
+        {!onlyLow && (
+          <select
+            className={field}
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value as Filter);
+              setLimit(PAGE);
+            }}
+            aria-label="Filtrar faixas"
+          >
+            <option value="all">Todas</option>
+            <option value="low">Só baixa confiança ({fmt(counts.low)})</option>
+            <option value="inferred">Só inferidas pelo artista ({fmt(counts.inferred)})</option>
+          </select>
+        )}
+        <label className="flex cursor-pointer items-center gap-2 has-disabled:cursor-not-allowed">
+          <input
+            type="checkbox"
+            className="check"
+            checked={allChosen}
+            disabled={filtered.length === 0}
+            onChange={() => setSelected(allChosen ? new Set() : new Set(filtered.map((e) => e.key)))}
+          />
+          Selecionar todas as filtradas ({fmt(filtered.length)})
+        </label>
+      </div>
+
+      {chosen.length > 0 && (
+        <div
+          className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-y border-fio bg-grafite-2 px-4 py-2 text-sm"
+          role="toolbar"
+          aria-label="Ações com as faixas selecionadas"
+        >
+          <span className="font-bold">
+            {fmt(chosen.length)} {chosen.length === 1 ? "selecionada" : "selecionadas"}
+          </span>
+          <select className={field} value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Mover para">
+            <option value="">Mover para…</option>
+            {targets.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+            <option value={NEW_GROUP}>Novo grupo…</option>
+          </select>
+          {target === NEW_GROUP && (
+            <input
+              className={field}
+              placeholder="Nome do grupo novo"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && newName.trim() && apply()}
+              aria-label="Nome do grupo novo"
+              autoFocus
+            />
+          )}
+          <button className={pill} disabled={!target || (target === NEW_GROUP && !newName.trim())} onClick={apply}>
+            Mover
+          </button>
+          {currentGroupId !== OTHER && (
+            <button className={pill} onClick={() => moveTo(OTHER)}>
+              Mover para {OTHER}
+            </button>
+          )}
+          <button className="ml-auto text-areia underline-offset-4 hover:text-papel hover:underline" onClick={done}>
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
+      {filtered.length === 0 && <p className="px-4 pb-3 text-sm text-areia">Nenhuma faixa com esse filtro.</p>}
+      <ul className="flex flex-col">
+        {filtered.slice(0, limit).map(({ key, groupId }) => {
+          const t = byKey.get(key);
+          return t ? (
+            <TrackRow
+              key={key}
+              track={t}
+              groupId={groupId}
+              groupLabel={groupName?.get(groupId)}
+              autoMovedFrom={autoMoved[key]}
+              groupOptions={groupOptions}
+              selected={selected.has(key)}
+              onSelect={toggle}
+              dispatch={dispatch}
+            />
+          ) : null;
+        })}
+      </ul>
+      {filtered.length > limit && (
+        <button
+          className="m-3 rounded-full border border-fio px-4 py-1.5 text-sm transition-colors hover:border-papel"
+          onClick={() => setLimit(limit + PAGE)}
+        >
+          Mostrar mais {Math.min(PAGE, filtered.length - limit)} (exibindo {limit} de {fmt(filtered.length)})
+        </button>
+      )}
+    </>
+  );
+});
+
 const TrackRow = memo(function TrackRow({
   track: t,
   groupId,
+  groupLabel,
   autoMovedFrom,
   groupOptions,
+  selected,
+  onSelect,
   dispatch,
 }: {
   track: ClassifiedTrack;
   groupId: string;
+  groupLabel?: string;
   autoMovedFrom: string | undefined;
   groupOptions: GroupOption[];
+  selected: boolean;
+  onSelect: (key: string) => void;
   dispatch: Dispatch<Action>;
 }) {
   return (
@@ -427,13 +744,29 @@ const TrackRow = memo(function TrackRow({
         t.lowConfidence ? "border-l-2 border-l-alerta" : ""
       }`}
     >
+      <input
+        type="checkbox"
+        className="check"
+        checked={selected}
+        onChange={() => onSelect(t.key)}
+        aria-label={`Selecionar ${t.name}`}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate">
           {t.name} <span className="text-areia">de {t.artist}</span>
+          {groupLabel && <span className="text-areia"> · em {groupLabel}</span>}
         </p>
         <p className="truncate text-sm text-areia">
           {t.tags.length > 0 ? t.tags.join(", ") : "nenhuma tag conhecida"}
           {autoMovedFrom && `, sugerido de ${autoMovedFrom}`}
+          {t.inferredFrom && (
+            <span
+              className="ml-2 rounded-full border border-fio px-2 py-px text-xs"
+              title={`Antes: ${t.inferredFrom.family}${t.inferredFrom.lowConfidence ? ` (baixa confiança: ${t.inferredFrom.lowConfidence})` : ""}`}
+            >
+              inferida pelo artista
+            </span>
+          )}
         </p>
         {t.lowConfidence && <p className="text-sm text-alerta">Baixa confiança: {t.lowConfidence}</p>}
       </div>

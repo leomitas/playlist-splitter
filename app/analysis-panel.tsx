@@ -1,8 +1,9 @@
 "use client";
 
 import { lastfm } from "@/lib/lastfm-client";
+import { LIKED_ID } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
-import { estimateRemainingMs, type Run } from "./analysis-queue";
+import { estimateRemainingMs, type LikedSync, type Run } from "./analysis-queue";
 import type { RowStatus } from "./playlist-picker";
 import { RateLimitNotice } from "./rate-limit-notice";
 import { RawError } from "./raw-error";
@@ -38,22 +39,39 @@ const PHASE: Record<Run["phase"], string> = {
   cancelled: "Análise cancelada",
 };
 
-const pillButton = "rounded-full border border-fio px-4 py-1.5 transition-colors hover:border-areia hover:bg-grafite-2";
+const pillButton =
+  "rounded-full border border-fio px-4 py-1.5 transition-colors hover:border-areia hover:bg-grafite-2 disabled:cursor-not-allowed disabled:opacity-40";
 const smallButton =
-  "flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs transition-colors hover:border-areia hover:bg-grafite-2";
+  "flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs transition-colors hover:border-areia hover:bg-grafite-2 disabled:cursor-not-allowed disabled:opacity-40";
+
+function syncText(s: LikedSync | undefined) {
+  if (!s) return "Lê só as curtidas adicionadas desde a última leitura. Descurtidas só saem na reanálise completa.";
+  if (s.state === "lendo") return `Lendo curtidas novas… ${fmt(s.fresh)}`;
+  if (s.state === "gêneros") return `Buscando gêneros ${fmt(s.done)} de ${fmt(s.total)}`;
+  if (s.state === "concluída")
+    return s.added === 0 ? "Nenhuma curtida nova." : `${fmt(s.added)} ${s.added === 1 ? "curtida nova adicionada" : "curtidas novas adicionadas"}.`;
+  return null;
+}
 
 export function AnalysisPanel({
   run,
+  blockedReason,
   onPause,
   onResume,
   onCancel,
   onReprocess,
+  onSyncLiked,
+  onFullReanalyze,
 }: {
   run: Run;
+  // set while Spotify blocks the app: every button that calls it is disabled with this reason
+  blockedReason?: string;
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
   onReprocess: (id: string) => void;
+  onSyncLiked: () => void;
+  onFullReanalyze: () => void;
 }) {
   const total = run.items.length;
   const finished = run.items.filter((i) => i.status !== "pendente" && i.status !== "analisando").length;
@@ -73,6 +91,8 @@ export function AnalysisPanel({
   const ofTotal = active
     ? `de ${fmt(total)}`
     : `de ${fmt(total)} ${run.phase === "done" ? "analisadas" : "processadas"}`;
+  const liked = run.items.find((i) => i.id === LIKED_ID);
+  const syncing = run.sync?.state === "lendo" || run.sync?.state === "gêneros";
 
   return (
     <section
@@ -119,8 +139,8 @@ export function AnalysisPanel({
       )}
 
       {/* only while analyzing; playlist creation shows its own notice */}
-      {active && <RateLimitNotice queue={spotify} service="Spotify" />}
-      {active && <RateLimitNotice queue={lastfm} service="Last.fm" />}
+      {(active || syncing) && <RateLimitNotice queue={spotify} service="Spotify" />}
+      {(active || syncing) && <RateLimitNotice queue={lastfm} service="Last.fm" />}
 
       {active && (
         <div className="flex gap-2">
@@ -130,10 +150,12 @@ export function AnalysisPanel({
             </button>
           ) : (
             <button
-              className="rounded-full bg-papel px-4 py-1.5 font-bold text-cafe transition-opacity hover:opacity-90"
+              className="rounded-full bg-papel px-4 py-1.5 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!!blockedReason}
+              title={blockedReason}
               onClick={onResume}
             >
-              Retomar
+              {blockedReason ? "Retomar (bloqueado)" : "Retomar"}
             </button>
           )}
           <button
@@ -142,6 +164,31 @@ export function AnalysisPanel({
           >
             Cancelar
           </button>
+        </div>
+      )}
+
+      {liked && !active && (
+        <div className="flex flex-col gap-1.5 border-t border-fio pt-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <button
+              className={pillButton}
+              disabled={!!blockedReason || syncing || liked.status !== "concluída"}
+              title={blockedReason ?? (liked.status !== "concluída" ? "As curtidas precisam ter sido analisadas" : undefined)}
+              onClick={onSyncLiked}
+            >
+              {syncing ? "Sincronizando…" : "Sincronizar curtidas"}
+            </button>
+            <button
+              className="text-xs text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
+              disabled={!!blockedReason || syncing}
+              title={blockedReason ?? "Lê todas as faixas de novo, sem usar o cache das curtidas"}
+              onClick={onFullReanalyze}
+            >
+              Reanálise completa
+            </button>
+          </div>
+          {syncText(run.sync) && <p className="text-xs text-areia">{syncText(run.sync)}</p>}
+          {run.sync?.state === "erro" && <RawError error={run.sync.error} />}
         </div>
       )}
 
@@ -158,7 +205,12 @@ export function AnalysisPanel({
                   {i.errorCount && i.errorCount > 1 && (
                     <span className="text-xs text-erro">{fmt(i.errorCount)} falhas</span>
                   )}
-                  <button className={smallButton} onClick={() => onReprocess(i.id)}>
+                  <button
+                    className={smallButton}
+                    disabled={!!blockedReason}
+                    title={blockedReason}
+                    onClick={() => onReprocess(i.id)}
+                  >
                     Reprocessar
                   </button>
                 </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import { applyArtistConsensus } from "@/lib/artist-consensus";
 import { markIncoherent } from "@/lib/classify";
 import { isSplitterPlaylist } from "@/lib/playlist-plan";
 import { isReadablePlaylist, LIKED_ID, type ApiResult, type LikedSummary, type Me, type Playlist } from "@/lib/spotify";
@@ -9,6 +10,7 @@ import { AnalysisPanel, itemStatus } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
 import { PlaylistPicker } from "./playlist-picker";
 import { Preview } from "./preview";
+import { QuotaBanner, useSpotifyBlock } from "./quota-banner";
 import { RawError } from "./raw-error";
 import { Steps } from "./steps";
 import { likedAsPlaylist, loadLikedSummary, loadMe, loadPlaylists } from "./spotify-data";
@@ -22,6 +24,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [cacheCleared, setCacheCleared] = useState(false);
   const run = useSyncExternalStore(analysis.subscribe, analysis.get, () => null);
+  const block = useSpotifyBlock();
 
   const refreshPlaylists = useCallback(async (force: boolean) => {
     setRefreshing(true);
@@ -38,11 +41,12 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
     })();
   }, [refreshPlaylists]);
 
-  // coherence flags depend on the whole set, so they're recomputed as tracks arrive
-  const tracks = useMemo(() => {
+  // coherence flags and the artist consensus depend on the whole set, so they're recomputed
+  // as tracks arrive (the consensus uses the coherence flags)
+  const { tracks, consensus } = useMemo(() => {
     const copy = (run?.tracks ?? []).map((t) => ({ ...t }));
     markIncoherent(copy);
-    return copy;
+    return { tracks: copy, consensus: applyArtistConsensus(copy) };
   }, [run?.tracks]);
 
   // the API doesn't return items for playlists the user neither owns nor collaborates on
@@ -78,12 +82,15 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
     [],
   );
   const setAllSelected = useCallback((ids: string[]) => setSelected(new Set(ids)), []);
-  const onSpotifyChanged = useCallback(() => refreshPlaylists(true), [refreshPlaylists]);
+  // writes patched the session's playlist list, so this reads it back without a new listing
+  const onSpotifyChanged = useCallback(() => refreshPlaylists(false), [refreshPlaylists]);
 
   // per-playlist analysis status, shown next to each playlist in the list
   const statusById = useMemo(() => new Map(run?.items.map((i) => [i.id, itemStatus(run, i)])), [run]);
 
   const active = run?.phase === "running" || run?.phase === "paused";
+  const syncing = run?.sync?.state === "lendo" || run?.sync?.state === "gêneros";
+  const busy = active || syncing;
   const step = run && tracks.length > 0 && !active ? 3 : 2;
 
   if (!me) return <AppSkeleton logout={logout} />;
@@ -91,12 +98,29 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   async function clearCache() {
     await analysis.clearCache();
     setCacheCleared(true);
-    await refreshPlaylists(true);
+    // a blocked Spotify can't list; the list on screen stays until "Atualizar"
+    if (!block.until) await refreshPlaylists(true);
+  }
+
+  async function syncLiked() {
+    await analysis.syncLiked();
+    setLiked(await loadLikedSummary());
+  }
+
+  function fullReanalyze() {
+    if (!run) return;
+    const ids = new Set(run.items.map((i) => i.id));
+    const again = readable.filter((p) => ids.has(p.id));
+    if (again.length === 0) return;
+    if (!window.confirm("Ler todas as faixas e curtidas de novo? As edições da prévia atual serão descartadas.")) return;
+    setCacheCleared(false);
+    void analysis.fullReanalyze(again);
   }
 
   return (
     <div className="flex w-full flex-1 flex-col self-stretch">
       <header className="z-20 border-b border-fio bg-cafe/95 backdrop-blur lg:sticky lg:top-0">
+        <QuotaBanner until={block.until} />
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
           <h1 className="wide text-lg sm:text-xl">Playlist Splitter</h1>
           <div className="order-last w-full lg:order-none lg:w-auto">
@@ -134,14 +158,15 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
             <div className="flex gap-3 text-sm">
               <button
                 className="text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline"
-                disabled={refreshing}
+                disabled={refreshing || !!block.reason}
+                title={block.reason}
                 onClick={() => refreshPlaylists(true)}
               >
                 {refreshing ? "Atualizando…" : "Atualizar"}
               </button>
               <button
                 className="text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline"
-                disabled={active}
+                disabled={busy}
                 onClick={clearCache}
                 title="Apaga faixas e gêneros guardados neste navegador"
               >
@@ -167,8 +192,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               <PlaylistPicker
                 playlists={pickerItems}
                 selected={selected}
-                disabled={active}
+                disabled={busy}
                 status={statusById}
+                reprocessDisabledReason={block.reason}
                 onToggle={toggleSelected}
                 onSetAll={setAllSelected}
                 onReprocess={analysis.reprocess}
@@ -178,25 +204,30 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
 
           <button
             className="flex-none rounded-full bg-papel px-5 py-3 font-bold text-cafe transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={active || chosen.length === 0}
+            disabled={busy || chosen.length === 0 || !!block.reason}
+            title={block.reason}
             onClick={() => {
               setCacheCleared(false);
               analysis.start(chosen);
             }}
           >
-            {chosen.length === 0
-              ? "Escolha playlists para analisar"
-              : `Analisar ${chosen.length} ${chosen.length === 1 ? "playlist" : "playlists"}`}
+            {block.reason ??
+              (chosen.length === 0
+                ? "Escolha playlists para analisar"
+                : `Analisar ${chosen.length} ${chosen.length === 1 ? "playlist" : "playlists"}`)}
           </button>
           {active && <p className="-mt-3 text-sm text-areia">Cancele a análise atual para começar outra.</p>}
 
           {run && (
             <AnalysisPanel
               run={run}
+              blockedReason={block.reason}
               onPause={analysis.pause}
               onResume={() => analysis.resume(readable)}
               onCancel={analysis.cancel}
               onReprocess={analysis.reprocess}
+              onSyncLiked={syncLiked}
+              onFullReanalyze={fullReanalyze}
             />
           )}
         </aside>
@@ -207,8 +238,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               key={run.id}
               tracks={tracks}
               duplicates={run.totalTracks - tracks.length}
+              consensus={consensus}
               storageKey={previewStorageKey(run.id)}
-              createDisabledReason={active ? "Aguarde a análise terminar" : undefined}
+              createDisabledReason={block.reason ?? (busy ? "Aguarde a análise terminar" : undefined)}
               onSpotifyChanged={onSpotifyChanged}
             />
           ) : active ? (

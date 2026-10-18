@@ -68,6 +68,12 @@ export async function cached<T>(
   return r;
 }
 
+// Updates a cached value in place (no request); does nothing when it isn't cached
+export function patchCached<T>(key: string, patch: (value: T) => T) {
+  const hit = read<T>(key);
+  if (hit !== undefined) write(key, patch(hit));
+}
+
 export function invalidate(key: string) {
   removeWhere((k) => k === key);
 }

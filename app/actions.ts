@@ -69,20 +69,23 @@ export async function getLikedPage(offset: number, limit = PAGE_SIZE) {
 export async function createPlaylist(
   name: string,
   isPublic: boolean,
-): Promise<ApiResult<{ id: string; url: string }>> {
+): Promise<ApiResult<{ id: string; url: string; name: string; snapshot_id: string }>> {
   const t = await token();
   if (!t) return notAuthenticated("POST", "/me/playlists");
 
   const trimmed = name.trim().slice(0, 100);
   if (!trimmed) return fail("POST", "/me/playlists", null, "Nome vazio.");
 
-  const res = await spotifyPost<{ id: string; external_urls: { spotify: string } }>("/me/playlists", t, {
+  const res = await spotifyPost<{ id: string; external_urls: { spotify: string }; snapshot_id: string }>("/me/playlists", t, {
     name: trimmed,
     public: isPublic,
     description: DESCRIPTION,
   });
   if (!res.ok) return res;
-  return { ok: true, data: { id: res.data.id, url: res.data.external_urls.spotify } };
+  return {
+    ok: true,
+    data: { id: res.data.id, url: res.data.external_urls.spotify, name: trimmed, snapshot_id: res.data.snapshot_id },
+  };
 }
 
 // Appends only; never removes, reorders, renames or changes privacy

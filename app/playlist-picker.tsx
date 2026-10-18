@@ -24,6 +24,7 @@ const PickerRow = memo(function PickerRow({
   disabled,
   status,
   text,
+  reprocessDisabledReason,
   onToggle,
   onReprocess,
 }: Item & {
@@ -31,6 +32,7 @@ const PickerRow = memo(function PickerRow({
   disabled: boolean;
   status?: ItemStatus;
   text?: string;
+  reprocessDisabledReason?: string;
   onToggle: (id: string) => void;
   onReprocess: (id: string) => void;
 }) {
@@ -53,7 +55,9 @@ const PickerRow = memo(function PickerRow({
       </label>
       {(status === "erro" || status === "cancelada") && (
         <button
-          className="flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs transition-colors hover:border-areia hover:bg-grafite-2"
+          className="flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs transition-colors hover:border-areia hover:bg-grafite-2 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!!reprocessDisabledReason}
+          title={reprocessDisabledReason}
           onClick={() => onReprocess(id)}
         >
           Reprocessar
@@ -68,6 +72,7 @@ export function PlaylistPicker({
   selected,
   disabled,
   status = NO_STATUS,
+  reprocessDisabledReason,
   onToggle,
   onSetAll,
   onReprocess,
@@ -77,6 +82,8 @@ export function PlaylistPicker({
   disabled: boolean;
   // analysis status of the playlists in the current run
   status?: Map<string, RowStatus>;
+  // e.g. Spotify blocked the app
+  reprocessDisabledReason?: string;
   onToggle: (id: string) => void;
   onSetAll: (ids: string[]) => void;
   onReprocess: (id: string) => void;
@@ -115,6 +122,7 @@ export function PlaylistPicker({
               disabled={disabled}
               status={s?.status}
               text={s?.text}
+              reprocessDisabledReason={reprocessDisabledReason}
               onToggle={onToggle}
               onReprocess={onReprocess}
             />

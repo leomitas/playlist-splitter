@@ -16,16 +16,37 @@ export type PreviewState = {
   autoMoved: Record<string, string>;
   // group id -> group it was merged into, so tracks arriving later follow the merge
   aliases: Record<string, string>;
+  // tracks the user moved; nothing automatic ever moves them again
+  manual: Record<string, true>;
+  // trackKey -> family it was placed with when that family came from the artist consensus
+  inferredPlaced: Record<string, string>;
 };
 
 export type Action =
   | { type: "toggleInclude"; groupId: string }
   | { type: "rename"; groupId: string; name: string }
   | { type: "move"; trackKey: string; toGroupId: string }
+  | { type: "moveMany"; trackKeys: string[]; toGroupId: string }
+  | { type: "createGroup"; name: string; trackKeys: string[] }
   | { type: "merge"; fromId: string; intoId: string }
   | { type: "restoreAutoMoved"; family: string }
-  | { type: "addTracks"; tracks: ClassifiedTrack[] }
+  // new tracks arrived and/or the artist consensus changed some families
+  | { type: "sync"; tracks: ClassifiedTrack[] }
   | { type: "reset"; state: PreviewState };
+
+// Family the track is placed with now: the inferred one it was placed with, else its own
+// family before inference
+const placedFamily = (state: PreviewState, t: ClassifiedTrack) =>
+  state.inferredPlaced[t.key] ?? t.inferredFrom?.family ?? t.family;
+
+// Tracks to add (unknown) or to re-place (family changed since placement, not moved by hand)
+export function pendingSync(state: PreviewState, tracks: ClassifiedTrack[]) {
+  const known = new Set(state.groups.flatMap((g) => g.trackKeys));
+  return tracks.filter((t) => !known.has(t.key) || (!state.manual[t.key] && placedFamily(state, t) !== t.family));
+}
+
+const inferredOf = (tracks: ClassifiedTrack[]) =>
+  Object.fromEntries(tracks.filter((t) => t.inferredFrom).map((t) => [t.key, t.family]));
 
 export function initialState(tracks: ClassifiedTrack[]): PreviewState {
   const byFamily = new Map<string, string[]>();
@@ -51,7 +72,19 @@ export function initialState(tracks: ClassifiedTrack[]): PreviewState {
   // only the largest group starts selected ("Outros" is last, so only if it's the only one)
   const first = groups.find((g) => g.trackKeys.length > 0);
   if (first) first.include = true;
-  return { groups, autoMoved, aliases: {} };
+  return { groups, autoMoved, aliases: {}, manual: {}, inferredPlaced: inferredOf(tracks) };
+}
+
+// Saved states from before `manual`/`inferredPlaced` existed: their inferred tracks count as
+// already placed, since a move made back then can't be told apart from an automatic placement
+export function upgradeSaved(saved: Partial<PreviewState> & Pick<PreviewState, "groups">, tracks: ClassifiedTrack[]): PreviewState {
+  return {
+    groups: saved.groups,
+    autoMoved: saved.autoMoved ?? {},
+    aliases: saved.aliases ?? {},
+    manual: saved.manual ?? {},
+    inferredPlaced: saved.inferredPlaced ?? inferredOf(tracks),
+  };
 }
 
 // same object when the key isn't there, so memoized cards don't see a change
@@ -104,6 +137,63 @@ function addTracks(state: PreviewState, tracks: ClassifiedTrack[]): PreviewState
   return { ...state, groups, autoMoved };
 }
 
+// Takes re-placed tracks out of their group, then places them (and the new ones) again
+function sync(state: PreviewState, tracks: ClassifiedTrack[]): PreviewState {
+  const todo = pendingSync(state, tracks);
+  if (todo.length === 0) return state;
+  const keys = new Set(todo.map((t) => t.key));
+  const inferredPlaced = { ...state.inferredPlaced };
+  for (const t of todo) {
+    if (t.inferredFrom) inferredPlaced[t.key] = t.family;
+    else delete inferredPlaced[t.key];
+  }
+  const cleared: PreviewState = {
+    ...state,
+    inferredPlaced,
+    autoMoved: Object.fromEntries(Object.entries(state.autoMoved).filter(([k]) => !keys.has(k))),
+    groups: state.groups.map((g) =>
+      g.trackKeys.some((k) => keys.has(k)) ? { ...g, trackKeys: g.trackKeys.filter((k) => !keys.has(k)) } : g,
+    ),
+  };
+  return addTracks(cleared, todo);
+}
+
+// Moves tracks into a group (created when it's "Outros" and it doesn't exist); marks them manual
+function moveMany(state: PreviewState, trackKeys: string[], toGroupId: string): PreviewState {
+  const keys = new Set(trackKeys);
+  if (keys.size === 0) return state;
+  let groups = state.groups;
+  if (!groups.some((g) => g.id === toGroupId)) {
+    if (toGroupId !== OTHER) return state;
+    groups = [...groups, { id: OTHER, name: OTHER, include: false, trackKeys: [] }];
+  }
+  const manual = { ...state.manual };
+  let autoMoved = state.autoMoved;
+  for (const k of keys) {
+    manual[k] = true;
+    autoMoved = withoutKey(autoMoved, k);
+  }
+  return {
+    ...state,
+    manual,
+    autoMoved,
+    groups: groups.map((g) => {
+      const has = g.trackKeys.some((k) => keys.has(k));
+      const rest = has ? g.trackKeys.filter((k) => !keys.has(k)) : g.trackKeys;
+      if (g.id === toGroupId) return { ...g, trackKeys: [...rest, ...trackKeys.filter((k) => keys.has(k))] };
+      return has ? { ...g, trackKeys: rest } : g;
+    }),
+  };
+}
+
+// User-made groups get an id that can't collide with a family, so new tracks never land there
+export function customGroupId(name: string, groups: Group[]) {
+  const base = `custom:${name.trim()}`;
+  let id = base;
+  for (let n = 2; groups.some((g) => g.id === id); n++) id = `${base} ${n}`;
+  return id;
+}
+
 export function reducer(state: PreviewState, action: Action): PreviewState {
   switch (action.type) {
     case "toggleInclude":
@@ -127,7 +217,27 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
         return has ? { ...g, trackKeys: rest } : g;
       });
       // a manual move overrides the automatic suggestion
-      return { ...state, groups, autoMoved: withoutKey(state.autoMoved, action.trackKey) };
+      return {
+        ...state,
+        groups,
+        autoMoved: withoutKey(state.autoMoved, action.trackKey),
+        manual: state.manual[action.trackKey] ? state.manual : { ...state.manual, [action.trackKey]: true },
+      };
+    }
+
+    case "moveMany":
+      return moveMany(state, action.trackKeys, action.toGroupId);
+
+    case "createGroup": {
+      const name = action.name.trim();
+      if (!name || action.trackKeys.length === 0) return state;
+      const id = customGroupId(name, state.groups);
+      const group: Group = { id, name, include: true, trackKeys: [] };
+      // new groups go before "Outros", which stays last
+      const otherIndex = state.groups.findIndex((g) => g.id === OTHER);
+      const groups = [...state.groups];
+      groups.splice(otherIndex === -1 ? groups.length : otherIndex, 0, group);
+      return moveMany({ ...state, groups }, action.trackKeys, id);
     }
 
     case "merge": {
@@ -162,8 +272,8 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
       return { ...state, groups, autoMoved };
     }
 
-    case "addTracks":
-      return addTracks(state, action.tracks);
+    case "sync":
+      return sync(state, action.tracks);
 
     case "reset":
       return action.state;
