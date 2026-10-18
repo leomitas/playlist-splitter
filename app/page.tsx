@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { auth, signIn, signOut } from "@/auth";
 import { matchAuthError, setupHref } from "@/lib/known-errors";
 import { genreColor } from "./genre-colors";
+import { SetupLink } from "./setup-link";
 import { LocalhostWarning } from "./setup/setup-client";
 import { SpotifyApp } from "./spotify-app";
 import { Steps } from "./steps";
@@ -51,9 +52,7 @@ function Welcome({ children }: { children: React.ReactNode }) {
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-10 px-4 py-12 sm:px-6">
       <div className="flex items-center justify-between gap-4">
         <Steps current={1} />
-        <Link href="/setup" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
-          Ajuda
-        </Link>
+        <SetupLink />
       </div>
       <div className="flex flex-col gap-5">
         <h1 className="wide text-5xl leading-[0.95] sm:text-7xl">Playlist Splitter</h1>

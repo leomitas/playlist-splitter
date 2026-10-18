@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
-import { envPresence, LOCAL_URL, REDIRECT_URI, REQUIRED_ENV, type EnvName } from "@/lib/env-check";
+import { envPresence, LOCAL_URL, missingEnv, REDIRECT_URI, REQUIRED_ENV, type EnvName } from "@/lib/env-check";
 import { KNOWN_ERRORS } from "@/lib/known-errors";
 import {
   ConfigTester,
@@ -228,21 +228,72 @@ async function Guide() {
           <code>npm run doctor</code> para conferir a configuração.
         </p>
         {devServer && <ConfigTester />}
-        <p>
-          Tudo ok? <Link href="/" className="font-bold underline underline-offset-2">Abrir o app</Link>
-        </p>
       </Step>
     </>
   );
+}
+
+// The app is reachable only when no required variable is missing; until then the proxy sends
+// "/" back here, so no link to "/" is rendered (it would loop)
+async function appReady() {
+  await connection();
+  return missingEnv().length === 0;
+}
+
+const LOCKED = "Complete os passos para liberar o app";
+
+function TopNav({ ready }: { ready: boolean }) {
+  return (
+    <nav aria-label="Navegação" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      {ready ? (
+        <Link href="/" className="wide text-lg sm:text-xl">
+          Playlist Splitter
+        </Link>
+      ) : (
+        <span className="wide text-lg sm:text-xl">Playlist Splitter</span>
+      )}
+      {ready ? (
+        <Link href="/" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
+          <span aria-hidden>← </span>Voltar ao app
+        </Link>
+      ) : (
+        <span className="text-sm text-areia/60" aria-disabled="true" title={LOCKED}>
+          <span aria-hidden>← </span>Voltar ao app <span className="sr-only">(indisponível: {LOCKED.toLowerCase()})</span>
+        </span>
+      )}
+    </nav>
+  );
+}
+
+async function ReadyTopNav() {
+  return <TopNav ready={await appReady()} />;
+}
+
+function GoToApp({ ready }: { ready: boolean }) {
+  const base = "inline-flex w-full items-center justify-center rounded-full px-6 py-3 font-bold sm:w-auto";
+  return ready ? (
+    <Link href="/" className={`${base} bg-papel text-cafe transition-opacity hover:opacity-90`}>
+      Ir para o app
+    </Link>
+  ) : (
+    <button type="button" disabled className={`${base} cursor-not-allowed bg-papel text-cafe opacity-40`}>
+      {LOCKED}
+    </button>
+  );
+}
+
+async function ReadyGoToApp() {
+  return <GoToApp ready={await appReady()} />;
 }
 
 export default function SetupPage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
       <header className="flex flex-col gap-3">
-        <Link href="/" className="wide text-lg sm:text-xl">
-          Playlist Splitter
-        </Link>
+        {/* until the check streams in, nothing links to "/" */}
+        <Suspense fallback={<TopNav ready={false} />}>
+          <ReadyTopNav />
+        </Suspense>
         <h1 className="wide text-3xl sm:text-4xl">Configuração</h1>
         <p className="max-w-[60ch] text-areia">
           O app roda no seu computador com o seu próprio app do Spotify. São seis passos, uma vez só. Abra sempre{" "}
@@ -270,6 +321,12 @@ export default function SetupPage() {
           ))}
         </ul>
       </section>
+
+      <div className="flex flex-col gap-2 border-t border-fio pt-6">
+        <Suspense fallback={<GoToApp ready={false} />}>
+          <ReadyGoToApp />
+        </Suspense>
+      </div>
     </main>
   );
 }

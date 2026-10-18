@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { applyArtistConsensus } from "@/lib/artist-consensus";
 import { markIncoherent } from "@/lib/classify";
 import { isSplitterPlaylist } from "@/lib/playlist-plan";
@@ -13,6 +12,7 @@ import { PlaylistPicker } from "./playlist-picker";
 import { Preview } from "./preview";
 import { QuotaBanner, useSpotifyBlock } from "./quota-banner";
 import { RawError } from "./raw-error";
+import { SetupLink } from "./setup-link";
 import { Steps } from "./steps";
 import { likedAsPlaylist, loadLikedSummary, loadMe, loadPlaylists } from "./spotify-data";
 
@@ -138,9 +138,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 </span>
               </>
             )}
-            <Link href="/setup" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
-              Ajuda
-            </Link>
+            <SetupLink />
             {logout}
           </div>
         </div>
