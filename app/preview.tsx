@@ -425,7 +425,7 @@ const Spectrum = memo(function Spectrum({
   );
   const ids = useMemo(() => bands.map((b) => b.id), [bands]);
   const isOn = (id: string) => include.get(id) ?? false;
-  const select = useDragSelect({ ids, isOn, apply: onApply });
+  const select = useDragSelect({ ids, isOn, apply: onApply, axis: "x" });
   const shown = bands.find((b) => b.id === hover?.id);
   const point = (e: { currentTarget: HTMLElement }, id: string) =>
     setHover({ id, x: e.currentTarget.offsetLeft + e.currentTarget.offsetWidth / 2 });

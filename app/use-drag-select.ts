@@ -19,7 +19,27 @@ type Options = {
   apply: (ids: string[], on: boolean) => void;
   // "page": scroll the window near the viewport's top/bottom edges while dragging
   autoScroll?: "page" | "none";
+  // layout of the items: a vertical list ("y", default) or a horizontal strip ("x")
+  axis?: "x" | "y";
 };
+
+// Pointer over something that isn't an item (a fixed footer covering the bottom edge, a gap):
+// the last item before it along the axis counts, so the span keeps growing while the page scrolls
+function nearestItem(d: { ids: string[]; x: number }, axis: "x" | "y", y: number): string | undefined {
+  let best: string | undefined;
+  let bestStart = -Infinity;
+  for (const node of document.querySelectorAll<HTMLElement>("[data-drag-id]")) {
+    const id = node.dataset.dragId!;
+    if (!d.ids.includes(id)) continue;
+    const r = node.getBoundingClientRect();
+    const start = axis === "x" ? r.left : r.top;
+    if (start <= (axis === "x" ? d.x : y) && start > bestStart) {
+      bestStart = start;
+      best = id;
+    }
+  }
+  return best;
+}
 
 type Drag = { pointerId: number; startId: string; currentId: string; on: boolean; ids: string[]; x: number; y: number; frame: number };
 
@@ -48,7 +68,7 @@ export function useDragSelect(options: Options) {
     }
     const y = Math.min(Math.max(d.y, 1), window.innerHeight - 1);
     const el = document.elementFromPoint(d.x, y)?.closest<HTMLElement>("[data-drag-id]");
-    const id = el?.dataset.dragId;
+    const id = el?.dataset.dragId ?? nearestItem(d, latest.current.axis ?? "y", y);
     if (id && id !== d.currentId && d.ids.includes(id)) {
       d.currentId = id;
       showSpan(d);
