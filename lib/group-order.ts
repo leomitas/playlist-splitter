@@ -10,7 +10,7 @@ export type SortBy = "size" | "name" | "review";
 export const SORT_LABELS: Record<SortBy, string> = {
   size: "Tamanho",
   name: "Nome",
-  review: "Mais a revisar",
+  review: "A revisar",
 };
 
 // Always at the end, in this order, whatever the criterion

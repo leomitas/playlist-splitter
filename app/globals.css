@@ -30,6 +30,13 @@ body {
   font-family: var(--font-sans);
 }
 
+/* the native list of the selects that stay (dynamic group lists) uses the app colors */
+select,
+option {
+  background-color: var(--color-cafe);
+  color: var(--color-papel);
+}
+
 ::selection {
   background: var(--color-papel);
   color: var(--color-cafe);

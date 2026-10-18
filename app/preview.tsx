@@ -30,6 +30,9 @@ import {
 import { CreatePlaylists } from "./create-playlists";
 import { shownOn, useDragSelect } from "./use-drag-select";
 import { genreColor } from "./genre-colors";
+import { Segmented } from "./segmented";
+
+const SORT_OPTIONS = (Object.keys(SORT_LABELS) as SortBy[]).map((by) => ({ value: by, label: SORT_LABELS[by] }));
 
 const noopSubscribe = () => () => {};
 // tracks shown per step inside an open group
@@ -254,24 +257,18 @@ function PreviewEditor({
             Gêneros
           </h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <label className="flex items-center gap-2 text-sm text-areia">
-              Ordenar por
-              <select
-                className="rounded-md border border-fio bg-cafe px-2 py-1 text-papel"
+            <div className="flex items-center gap-2 text-sm text-areia">
+              <span aria-hidden>Ordenar por</span>
+              <Segmented
+                label="Ordenar por"
+                options={SORT_OPTIONS}
                 value={sortBy}
-                onChange={(e) => {
-                  const by = e.target.value as SortBy;
+                onChange={(by) => {
                   setSortBy(by);
                   saveSortBy(by);
                 }}
-              >
-                {(Object.keys(SORT_LABELS) as SortBy[]).map((by) => (
-                  <option key={by} value={by}>
-                    {SORT_LABELS[by]}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+            </div>
             <button
               className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
               onClick={() => setManualSort((n) => n + 1)}
@@ -878,19 +875,19 @@ const ReviewList = memo(function ReviewList({
           aria-label="Buscar artista ou faixa"
         />
         {!onlyLow && (
-          <select
-            className={field}
+          <Segmented
+            label="Filtrar faixas"
+            options={[
+              { value: "all", label: "Todas" },
+              { value: "low", label: `Só baixa confiança (${fmt(counts.low)})` },
+              { value: "inferred", label: `Só inferidas pelo artista (${fmt(counts.inferred)})` },
+            ]}
             value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value as Filter);
+            onChange={(f) => {
+              setFilter(f);
               setLimit(PAGE);
             }}
-            aria-label="Filtrar faixas"
-          >
-            <option value="all">Todas</option>
-            <option value="low">Só baixa confiança ({fmt(counts.low)})</option>
-            <option value="inferred">Só inferidas pelo artista ({fmt(counts.inferred)})</option>
-          </select>
+          />
         )}
         <label className="flex cursor-pointer items-center gap-2 has-disabled:cursor-not-allowed">
           <input
