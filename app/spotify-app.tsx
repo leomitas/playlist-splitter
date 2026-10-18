@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { applyArtistConsensus } from "@/lib/artist-consensus";
+import { applyCountries, artistsNeedingCountry } from "@/lib/country";
 import { markIncoherent } from "@/lib/classify";
 import { isSplitterPlaylist } from "@/lib/playlist-plan";
 import { isReadablePlaylist, LIKED_ID, type ApiResult, type LikedSummary, type Me, type Playlist } from "@/lib/spotify";
 import { AnalysisPanel, itemStatus } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
+import { countryLookup } from "./country-lookup";
 import { PlaylistPicker } from "./playlist-picker";
 import { Preview } from "./preview";
 import { QuotaBanner, useSpotifyBlock } from "./quota-banner";
@@ -42,13 +44,24 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
     })();
   }, [refreshPlaylists]);
 
-  // coherence flags and the artist consensus depend on the whole set, so they're recomputed
-  // as tracks arrive (the consensus uses the coherence flags)
+  const countries = useSyncExternalStore(countryLookup.subscribe, countryLookup.get, countryLookup.get);
+
+  // Artist countries, coherence flags and the artist consensus depend on the whole set, so
+  // they're recomputed as tracks (or countries) arrive, in that order: the country decides the
+  // bare "funk" tag, and the consensus uses the coherence flags
   const { tracks, consensus } = useMemo(() => {
     const copy = (run?.tracks ?? []).map((t) => ({ ...t }));
+    applyCountries(copy, countries.countries);
     markIncoherent(copy);
     return { tracks: copy, consensus: applyArtistConsensus(copy) };
-  }, [run?.tracks]);
+  }, [run?.tracks, countries.countries]);
+
+  // artists with only the bare "funk" tag: their country is looked up once the analysis is idle
+  const needCountry = useMemo(() => artistsNeedingCountry(run?.tracks ?? []), [run?.tracks]);
+  const analyzing = run?.phase === "running" || run?.phase === "paused";
+  useEffect(() => {
+    if (!analyzing && needCountry.size > 0) void countryLookup.ensure(needCountry);
+  }, [needCountry, analyzing]);
 
   // the API doesn't return items for playlists the user neither owns nor collaborates on
   // liked songs first; playlists created by this app are left out so they aren't re-analyzed
@@ -98,6 +111,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
 
   async function clearCache() {
     await analysis.clearCache();
+    countryLookup.reset();
     setCacheCleared(true);
     // a blocked Spotify can't list; the list on screen stays until "Atualizar"
     if (!block.until) await refreshPlaylists(true);
@@ -230,6 +244,8 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               onReprocess={analysis.reprocess}
               onSyncLiked={syncLiked}
               onFullReanalyze={fullReanalyze}
+              countries={countries}
+              countryArtists={needCountry}
             />
           )}
         </aside>

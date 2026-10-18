@@ -18,7 +18,9 @@ export type PreviewState = {
   aliases: Record<string, string>;
   // tracks the user moved; nothing automatic ever moves them again
   manual: Record<string, true>;
-  // trackKey -> family it was placed with when that family came from the artist consensus
+  // trackKey -> family it was placed with when that family differs from the tags' own (artist
+  // consensus or the artist's country); the name predates the country rule and is kept for
+  // saved states
   inferredPlaced: Record<string, string>;
 };
 
@@ -34,10 +36,12 @@ export type Action =
   | { type: "sync"; tracks: ClassifiedTrack[] }
   | { type: "reset"; state: PreviewState };
 
-// Family the track is placed with now: the inferred one it was placed with, else its own
-// family before inference
-const placedFamily = (state: PreviewState, t: ClassifiedTrack) =>
-  state.inferredPlaced[t.key] ?? t.inferredFrom?.family ?? t.family;
+// Family from the tags alone, before country and consensus adjustments
+const tagFamily = (t: ClassifiedTrack) => t.baseFamily ?? t.inferredFrom?.family ?? t.family;
+const isAdjusted = (t: ClassifiedTrack) => t.family !== tagFamily(t);
+
+// Family the track is placed with now: the adjusted one it was placed with, else its tags' own
+const placedFamily = (state: PreviewState, t: ClassifiedTrack) => state.inferredPlaced[t.key] ?? tagFamily(t);
 
 // Tracks to add (unknown) or to re-place (family changed since placement, not moved by hand)
 export function pendingSync(state: PreviewState, tracks: ClassifiedTrack[]) {
@@ -46,7 +50,7 @@ export function pendingSync(state: PreviewState, tracks: ClassifiedTrack[]) {
 }
 
 const inferredOf = (tracks: ClassifiedTrack[]) =>
-  Object.fromEntries(tracks.filter((t) => t.inferredFrom).map((t) => [t.key, t.family]));
+  Object.fromEntries(tracks.filter(isAdjusted).map((t) => [t.key, t.family]));
 
 export function initialState(tracks: ClassifiedTrack[]): PreviewState {
   const byFamily = new Map<string, string[]>();
@@ -144,7 +148,7 @@ function sync(state: PreviewState, tracks: ClassifiedTrack[]): PreviewState {
   const keys = new Set(todo.map((t) => t.key));
   const inferredPlaced = { ...state.inferredPlaced };
   for (const t of todo) {
-    if (t.inferredFrom) inferredPlaced[t.key] = t.family;
+    if (isAdjusted(t)) inferredPlaced[t.key] = t.family;
     else delete inferredPlaced[t.key];
   }
   const cleared: PreviewState = {

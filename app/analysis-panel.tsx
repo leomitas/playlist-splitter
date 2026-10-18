@@ -5,6 +5,7 @@ import { lastfm } from "@/lib/lastfm-client";
 import { LIKED_ID } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
 import { estimateRemainingMs, type LikedSync, type Run } from "./analysis-queue";
+import { countryEtaMs, countryLookup, musicbrainz, type CountryState } from "./country-lookup";
 import type { RowStatus } from "./playlist-picker";
 import { RateLimitNotice } from "./rate-limit-notice";
 import { RawError } from "./raw-error";
@@ -63,6 +64,8 @@ export function AnalysisPanel({
   onReprocess,
   onSyncLiked,
   onFullReanalyze,
+  countries,
+  countryArtists,
 }: {
   run: Run;
   // set while Spotify blocks the app: every button that calls it is disabled with this reason
@@ -73,6 +76,9 @@ export function AnalysisPanel({
   onReprocess: (id: string) => void;
   onSyncLiked: () => void;
   onFullReanalyze: () => void;
+  countries: CountryState;
+  // artists whose family waits for their country (key -> name)
+  countryArtists: Map<string, string>;
 }) {
   const total = run.items.length;
   const finished = run.items.filter((i) => i.status !== "pendente" && i.status !== "analisando").length;
@@ -168,6 +174,8 @@ export function AnalysisPanel({
         </div>
       )}
 
+      {countryArtists.size > 0 && !active && <CountryProgress state={countries} artists={countryArtists} />}
+
       {!active && (run.rulesVersion ?? 1) < CLASSIFIER_VERSION && (
         <p className="rounded-lg border border-alerta/50 bg-alerta/10 p-2.5 text-xs">
           <span className="font-bold text-alerta">As regras de gênero mudaram desde esta análise</span> (Funk BR e funk
@@ -260,5 +268,64 @@ export function AnalysisPanel({
         </details>
       ))}
     </section>
+  );
+}
+
+// MusicBrainz country lookups for artists tagged only "funk": progress, time left, pause
+function CountryProgress({ state, artists }: { state: CountryState; artists: Map<string, string> }) {
+  let br = 0;
+  let abroad = 0;
+  let unknown = 0;
+  let pending = 0;
+  for (const key of artists.keys()) {
+    const c = state.countries[key];
+    if (c === undefined) pending++;
+    else if (c === null) unknown++;
+    else if (c === "BR") br++;
+    else abroad++;
+  }
+  const running = state.phase === "running" || state.phase === "paused";
+  const percent = state.total === 0 ? 0 : Math.min(100, (state.done / state.total) * 100);
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-fio pt-3 text-xs">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="font-bold text-papel">País dos artistas (MusicBrainz)</p>
+        {running && (
+          <button
+            className="flex-none rounded-full border border-fio px-2.5 py-0.5 transition-colors hover:border-areia hover:bg-grafite-2"
+            onClick={state.phase === "paused" ? countryLookup.resume : countryLookup.pause}
+          >
+            {state.phase === "paused" ? "Retomar" : "Pausar"}
+          </button>
+        )}
+      </div>
+      <p className="text-areia">
+        Decide a tag genérica &quot;funk&quot; de {fmt(artists.size)} {artists.size === 1 ? "artista" : "artistas"}: Brasil vai
+        para Funk BR, outro país para R&amp;B/Soul. Uma consulta por segundo.
+      </p>
+      {running && (
+        <>
+          <div className="h-1 overflow-hidden rounded-full bg-cafe" aria-hidden>
+            <div
+              className={`h-full rounded-full transition-[width] duration-300 ${state.phase === "paused" ? "bg-areia" : "bg-papel"}`}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <p className="text-areia" aria-live="polite">
+            {state.phase === "paused" ? "Pausado" : "Consultando"} {fmt(state.done)} de {fmt(state.total)}
+            {state.phase === "running" && ` · ${formatEta(countryEtaMs(state))}`}
+          </p>
+          <RateLimitNotice queue={musicbrainz} service="MusicBrainz" />
+        </>
+      )}
+      <p className="text-areia">
+        {fmt(br)} do Brasil · {fmt(abroad)} de outro país · {fmt(unknown)} não encontrados
+        {pending > 0 && !running && ` · ${fmt(pending)} na fila`}
+        {unknown > 0 && " (ficam em Funk (incerto) para revisão)"}
+      </p>
+      {state.failed > 0 && <p className="text-alerta">{fmt(state.failed)} consultas falharam; serão repetidas da próxima vez.</p>}
+      {state.error?.status === 401 && <RawError error={state.error} />}
+    </div>
   );
 }
