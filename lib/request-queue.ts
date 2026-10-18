@@ -2,7 +2,7 @@
 // (honouring Retry-After) that pause the whole queue. With a block store, a 429 asking for more
 // than BLOCK_THRESHOLD_S is never retried: it blocks every call until it ends.
 
-import { BLOCK_THRESHOLD_S, formatBlockEnd } from "@/lib/quota-block";
+import { BLOCK_THRESHOLD_S } from "@/lib/quota-block";
 import type { ApiError, ApiResult } from "@/lib/spotify";
 
 type Block = { get(): number | null; set(untilMs: number): void };
@@ -39,7 +39,8 @@ export function createRequestQueue(overrides: Partial<Options> = {}) {
     ok: false,
     url: label,
     status: 429,
-    raw: `Spotify bloqueou o app até ${formatBlockEnd(until)}. Nenhuma chamada é feita até lá.`,
+    code: "spotify-blocked",
+    raw: `Spotify blocked the app until ${new Date(until).toISOString()}. No call is made until then.`,
     blockedUntil: until,
   });
 

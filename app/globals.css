@@ -65,6 +65,12 @@ html {
   background: var(--color-cafe);
 }
 
+/* the server renders Portuguese: for another language the head script hides the page until
+   it has re-rendered (app/i18n.tsx), so the visitor never sees the switch */
+html[data-i18n-pending] body {
+  visibility: hidden;
+}
+
 body {
   min-height: 100dvh;
   background: var(--color-cafe);

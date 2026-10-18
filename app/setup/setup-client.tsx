@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import type { Check } from "@/lib/config-test";
+import { LOCAL_URL } from "@/lib/env-check";
+import { useI18n, type I18n } from "../i18n";
 import { testConfiguration } from "./actions";
 
 export type StepStatus = "pendente" | "ok" | "atenção";
@@ -13,14 +15,16 @@ const CHIP: Record<StepStatus, string> = {
 };
 
 export function StatusChip({ status }: { status: StepStatus }) {
+  const { t } = useI18n();
   return (
     <span className={`flex-none rounded-full border px-2.5 py-0.5 text-xs font-bold ${CHIP[status]}`}>
-      {status === "ok" ? "✓ ok" : status}
+      {t(`setup.status.${status}`)}
     </span>
   );
 }
 
-export function CopyButton({ value, label = "Copiar" }: { value: string; label?: string }) {
+export function CopyButton({ value, label }: { value: string; label?: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -40,7 +44,7 @@ export function CopyButton({ value, label = "Copiar" }: { value: string; label?:
         }
       }}
     >
-      {copied ? "Copiado" : label}
+      {copied ? t("setup.copied") : (label ?? t("setup.copy"))}
     </button>
   );
 }
@@ -62,18 +66,25 @@ const noopSubscribe = () => () => {};
 
 // The page must be opened on 127.0.0.1: Spotify rejects localhost as redirect URI
 export function LocalhostWarning() {
+  const { t, rich } = useI18n();
   const host = useSyncExternalStore(noopSubscribe, () => window.location.hostname, () => "");
   if (host !== "localhost") return null;
   const url = `http://127.0.0.1:${window.location.port || "3000"}${window.location.pathname}`;
   return (
     <div role="alert" className="rounded-lg border border-alerta/60 bg-alerta/10 p-3 text-sm">
-      <p className="font-bold text-alerta">Esta página foi aberta por localhost.</p>
+      <p className="font-bold text-alerta">{t("setup.localhost.title")}</p>
       <p className="text-areia">
-        O Spotify não aceita localhost como redirect URI e o login não funciona por aqui. Abra{" "}
-        <a className="text-papel underline underline-offset-2" href={url}>
-          {url}
-        </a>
-        .
+        {rich(
+          "setup.localhost.body",
+          { url },
+          {
+            link: (c) => (
+              <a className="text-papel underline underline-offset-2" href={url}>
+                {c}
+              </a>
+            ),
+          },
+        )}
       </p>
     </div>
   );
@@ -97,6 +108,7 @@ const subscribeDone = (l: () => void) => {
 
 // Steps the app can't verify by itself: the user marks them done (kept in this browser)
 export function ManualStep({ id, warn }: { id: string; warn?: boolean }) {
+  const { t } = useI18n();
   const done = useSyncExternalStore(subscribeDone, () => readDone(id), () => false);
   const host = useSyncExternalStore(noopSubscribe, () => window.location.hostname, () => "");
   const status: StepStatus = done ? "ok" : warn && host === "localhost" ? "atenção" : "pendente";
@@ -118,7 +130,7 @@ export function ManualStep({ id, warn }: { id: string; warn?: boolean }) {
             doneListeners.forEach((l) => l());
           }}
         />
-        Feito
+        {t("setup.manualDone")}
       </label>
     </div>
   );
@@ -134,6 +146,7 @@ function randomSecret() {
 }
 
 export function SecretGenerator() {
+  const { t } = useI18n();
   const [secret, setSecret] = useState<string | null>(null);
   return (
     <div className="flex flex-col gap-2">
@@ -143,16 +156,28 @@ export function SecretGenerator() {
           className="rounded-full bg-papel px-4 py-1.5 text-sm font-bold text-cafe transition-opacity hover:opacity-90"
           onClick={() => setSecret(randomSecret())}
         >
-          Gerar AUTH_SECRET
+          {t("setup.secret.generate")}
         </button>
-        <span className="text-xs text-areia">Gerado no seu navegador; não é enviado a lugar nenhum.</span>
+        <span className="text-xs text-areia">{t("setup.secret.local")}</span>
       </div>
-      {secret && <CopyField label="Cole em AUTH_SECRET no .env.local" value={secret} />}
+      {secret && <CopyField label={t("setup.secret.paste")} value={secret} />}
     </div>
   );
 }
 
+// label and hint of one check, from its id and hint code
+function checkText({ t }: I18n, c: Check) {
+  const label =
+    c.id === "auth-url" || c.id === "auth-secret" || c.id === "spotify" || c.id === "lastfm"
+      ? t(`setup.check.${c.id}`, { url: LOCAL_URL })
+      : t("setup.check.env", { name: c.id });
+  const hint = c.hint && t(`setup.hint.${c.hint}`, { url: LOCAL_URL, status: String(c.status ?? "") });
+  return { label, hint };
+}
+
 export function ConfigTester() {
+  const i18n = useI18n();
+  const { t } = i18n;
   const [result, setResult] = useState<Check[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -178,24 +203,25 @@ export function ConfigTester() {
             })
           }
         >
-          {pending ? "Testando…" : "Testar configuração"}
+          {pending ? t("setup.tester.testing") : t("setup.tester.test")}
         </button>
-        <span className="text-xs text-areia">
-          Confere se cada variável existe e se o Spotify e o Last.fm aceitam as chaves. Nenhum valor é mostrado.
-        </span>
+        <span className="text-xs text-areia">{t("setup.tester.hint")}</span>
       </div>
-      {unavailable && <p className="text-sm text-areia">Disponível só no servidor de desenvolvimento (npm run dev).</p>}
-      {failed && <p className="text-sm text-erro">Não foi possível falar com o servidor. Ele está rodando?</p>}
+      {unavailable && <p className="text-sm text-areia">{t("setup.tester.unavailable")}</p>}
+      {failed && <p className="text-sm text-erro">{t("setup.tester.failed")}</p>}
       {result && (
         <ul className="flex flex-col gap-1.5 rounded-lg border border-fio bg-cafe p-3 text-sm" aria-live="polite">
-          {result.map((c) => (
-            <li key={c.id} className="flex flex-col">
-              <span className={c.ok ? "text-ok" : "text-erro"}>
-                {c.ok ? "✓" : "✗"} {c.label}: {c.ok ? "ok" : "falhou"}
-              </span>
-              {c.hint && <span className="pl-4 text-xs text-areia">{c.hint}</span>}
-            </li>
-          ))}
+          {result.map((c) => {
+            const { label, hint } = checkText(i18n, c);
+            return (
+              <li key={c.id} className="flex flex-col">
+                <span className={c.ok ? "text-ok" : "text-erro"}>
+                  {c.ok ? "✓" : "✗"} {t(c.ok ? "setup.tester.ok" : "setup.tester.fail", { label })}
+                </span>
+                {hint && <span className="pl-4 text-xs text-areia">{hint}</span>}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

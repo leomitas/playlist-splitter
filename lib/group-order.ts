@@ -7,20 +7,23 @@ import type { Group } from "@/lib/preview-state";
 
 export type SortBy = "size" | "name" | "review";
 
-export const SORT_LABELS: Record<SortBy, string> = {
-  size: "Tamanho",
-  name: "Nome",
-  review: "A revisar",
-};
+export const SORT_OPTIONS: SortBy[] = ["size", "name", "review"];
 
 // Always at the end, in this order, whatever the criterion
 const LAST = [FUNK_UNCERTAIN, OTHER];
 const lastRank = (id: string) => LAST.indexOf(id);
 
-export function sortGroupIds(groups: Group[], by: SortBy, lowCount: (g: Group) => number): string[] {
+// nameOf / locale: the name shown (translated families) and how to compare it
+export function sortGroupIds(
+  groups: Group[],
+  by: SortBy,
+  lowCount: (g: Group) => number,
+  nameOf: (g: Group) => string = (g) => g.name,
+  locale = "pt-BR",
+): string[] {
   const head = groups.filter((g) => lastRank(g.id) === -1);
   const tail = groups.filter((g) => lastRank(g.id) !== -1).sort((a, b) => lastRank(a.id) - lastRank(b.id));
-  const byName = (a: Group, b: Group) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+  const byName = (a: Group, b: Group) => nameOf(a).localeCompare(nameOf(b), locale, { sensitivity: "base" });
   const size = (a: Group, b: Group) => b.trackKeys.length - a.trackKeys.length;
   const compare =
     by === "name"

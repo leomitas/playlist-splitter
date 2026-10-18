@@ -43,7 +43,12 @@ app/analysis-queue.ts        análise em segundo plano, "Sincronizar curtidas", 
 app/spotify-data.ts          leitores com cache (lista da sessão, faixas por snapshot, playlists criadas)
 app/preview.tsx              grupos, revisão rápida (busca, filtros, lote), export JSON
 app/create-playlists.tsx     confirmação e criação/atualização de playlists
-app/setup/                   guia /setup e "Testar configuração" (server action, só fora de produção)
+app/setup/                   guia /setup (texto em guide.tsx) e "Testar configuração" (server action, só fora de produção)
+app/boot-script.ts           script inline do <head>: tema e idioma antes da primeira pintura
+app/theme.ts, app/locale.ts  stores do tema (claro/escuro/sistema) e do idioma (localStorage)
+app/i18n.tsx                 useI18n(): t, rich, números/listas via Intl, nomes de gênero traduzidos
+app/segmented.tsx            controle segmentado (radiogroup) usado no lugar de selects curtos
+lib/i18n/                    dicionários pt-BR (referência) e en, plural com Intl.PluralRules
 lib/genre-families.ts        mapa tag do Last.fm -> família
 lib/classify.ts              família por faixa, checagem de coerência
 lib/artist-consensus.ts      consenso por artista
@@ -92,8 +97,16 @@ scripts/                     setup-env.mjs, doctor.mjs
 ## Status
 
 - **Pronto:** login; análise de playlists e curtidas em segundo plano com cache; classificação por gênero (Last.fm + consenso por artista); prévia com revisão rápida e export JSON; criação/atualização de playlists com progresso; bloqueio por cota; sincronização incremental das curtidas; `/setup`, `setup:env`, `doctor`; estrutura open source (README en/pt-BR, CONTRIBUTING, CoC, SECURITY, templates, CI, Dependabot).
-- **Falta / próximos:** gravar GIF e vídeos (placeholders no README e em `app/setup/videos.ts`); reformatar o código com Prettier num commit único e ligar `format:check` no CI; detectar descurtidas sem reanálise completa; tradução da interface; tema claro; importar o arquivo de dados do Spotify (ver `docs/good-first-issues.md`).
+- **Falta / próximos:** gravar GIF e vídeos (placeholders no README e em `app/setup/videos.ts`); reformatar o código com Prettier num commit único e ligar `format:check` no CI; detectar descurtidas sem reanálise completa; importar o arquivo de dados do Spotify (ver `docs/good-first-issues.md`).
 - **Sem teste com a API real:** criação/atualização de playlists com o cache de criadas, sincronização de curtidas, bloqueio por 429 real, "Testar configuração" contra Spotify/Last.fm, consultas reais ao MusicBrainz, latência de clique no navegador.
+
+### Tema e idioma
+
+- Cores só via tokens (`globals.css`, `:root` escuro e `[data-theme="light"]`); nomes antigos viraram papéis (`cafe` = fundo, `papel` = texto). Gêneros: `oklch(var(--genre-l) …)`. `tests/contrast.test.ts` confere AA nos dois temas.
+- Texto visível só via dicionário (`lib/i18n/pt-BR.ts` define as chaves; `en.ts` tipado contra elas). `tests/no-hardcoded-text.test.ts` varre `app/`. Códigos de estado persistidos (`concluída`, `erro`...) continuam em PT e são traduzidos na exibição.
+- O servidor renderiza pt-BR; para outro idioma o script do head esconde o body até `useRevealText()` (cada página chama no componente principal).
+- Famílias de gênero: o id é a chave estável; só a exibição é traduzida (`genre()`, `groupName()`), e só para grupos não renomeados.
+- Erros gerados pelo app têm `code` (+ `vars`); o `raw` é técnico, em inglês.
 
 ## Convenções
 

@@ -86,21 +86,17 @@ export function createBlockStore(storage: () => StorageLike | null = browserStor
   };
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-// "14:05" today, "18/10 14:05" on another day
-export function formatBlockEnd(until: number, now = Date.now()) {
+// Time only today ("14:05"), with day and month on another day ("18/10 14:05" in pt-BR)
+export function formatBlockEnd(until: number, now = Date.now(), locale = "pt-BR") {
   const d = new Date(until);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return new Date(now).toDateString() === d.toDateString() ? time : `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${time}`;
+  const sameDay = new Date(now).toDateString() === d.toDateString();
+  const time = { hour: "2-digit", minute: "2-digit" } as const;
+  return new Intl.DateTimeFormat(locale, sameDay ? time : { ...time, day: "2-digit", month: "2-digit" }).format(d);
 }
 
-// "2h 05m", "12m", "menos de 1m"
-export function formatBlockLeft(ms: number) {
+// Time left in whole minutes (rounded up), split for "2h 05m" / "12m"; null under a minute
+export function blockLeft(ms: number): { hours: number; minutes: number } | null {
   const min = Math.ceil(ms / 60000);
-  if (min < 1) return "menos de 1m";
-  const h = Math.floor(min / 60);
-  return h > 0 ? `${h}h ${pad(min % 60)}m` : `${min}m`;
+  if (min < 1) return null;
+  return { hours: Math.floor(min / 60), minutes: min % 60 };
 }
-
-export const blockedReason = (until: number) => `Spotify bloqueado até ${formatBlockEnd(until)}`;

@@ -11,7 +11,14 @@ export function proxy(req: NextRequest) {
 
   if (req.nextUrl.pathname.startsWith("/api/")) {
     return Response.json(
-      { ok: false, url: req.nextUrl.pathname, status: 503, raw: `Configuração incompleta: falta ${missing.join(", ")}. Veja /setup.` },
+      {
+        ok: false,
+        url: req.nextUrl.pathname,
+        status: 503,
+        code: "config-missing",
+        vars: { missing: missing.join(", ") },
+        raw: `Missing configuration: ${missing.join(", ")}. See /setup.`,
+      },
       { status: 503 },
     );
   }

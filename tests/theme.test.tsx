@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BOOT_SCRIPT } from "@/app/boot-script";
 import { ThemeToggle } from "@/app/preferences";
+import { localeStore } from "@/app/locale";
 import { themeStore } from "@/app/theme";
 
 vi.mock("next/font/google", () => ({ Archivo: () => ({ variable: "f1" }), Atkinson_Hyperlegible: () => ({ variable: "f2" }) }));
@@ -22,6 +23,9 @@ function setSystem(light: boolean) {
 beforeEach(() => {
   localStorage.clear();
   themeStore.reset();
+  // the head script also sets the language (jsdom reports en-US); these tests read Portuguese
+  document.documentElement.lang = "pt-BR";
+  localeStore.reset();
   document.documentElement.removeAttribute("data-theme");
   systemLight = false;
   window.matchMedia = ((query: string) => ({

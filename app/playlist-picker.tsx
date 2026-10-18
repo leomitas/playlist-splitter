@@ -13,6 +13,7 @@ import {
   type QuickFilter,
 } from "@/lib/selection";
 import type { ItemStatus } from "./analysis-queue";
+import { useI18n } from "./i18n";
 
 export type RowStatus = { status: ItemStatus; text: string };
 
@@ -31,12 +32,12 @@ const NO_INFO = new Map<string, AnalysisInfo>();
 const EDGE = 40;
 const MAX_SPEED = 18;
 
-const QUICK: { id: QuickFilter; label: string }[] = [
-  { id: "all", label: "Todas" },
-  { id: "unanalyzed", label: "Não analisadas" },
-  { id: "error", label: "Com erro" },
-  { id: "changed", label: "Alteradas desde a última análise" },
-];
+const QUICK = [
+  { id: "all", label: "picker.quick.all" },
+  { id: "unanalyzed", label: "picker.quick.unanalyzed" },
+  { id: "error", label: "picker.quick.error" },
+  { id: "changed", label: "picker.quick.changed" },
+] as const satisfies { id: QuickFilter; label: string }[];
 
 type Drag = {
   pointerId: number;
@@ -80,6 +81,7 @@ const PickerRow = memo(function PickerRow({
   reprocessDisabledReason?: string;
   handlers: RowHandlers;
 }) {
+  const { t } = useI18n();
   return (
     <li
       data-row-id={id}
@@ -123,7 +125,7 @@ const PickerRow = memo(function PickerRow({
             handlers.onReprocess(id);
           }}
         >
-          Reprocessar
+          {t("common.reprocess")}
         </button>
       )}
     </li>
@@ -152,6 +154,7 @@ export function PlaylistPicker({
   onSelect: (next: Set<string>) => void;
   onReprocess: (id: string) => void;
 }) {
+  const { t, n } = useI18n();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [quick, setQuick] = useState<QuickFilter>("all");
@@ -264,7 +267,7 @@ export function PlaylistPicker({
     "text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline";
 
   if (playlists.length === 0) {
-    return <p className="text-sm text-areia">Nenhuma playlist sua ou colaborativa encontrada.</p>;
+    return <p className="text-sm text-areia">{t("picker.none")}</p>;
   }
 
   return (
@@ -278,40 +281,40 @@ export function PlaylistPicker({
             disabled={disabled}
             onChange={() => onSelect(allSelected ? new Set() : new Set(allIds()))}
           />
-          <span className="font-bold">Selecionar todas</span>
+          <span className="font-bold">{t("picker.selectAll")}</span>
           <span className="ml-auto text-sm text-areia">
-            {selectedCount} de {playlists.length}
+            {t("picker.count", { selected: selectedCount, total: playlists.length })}
           </span>
         </label>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
           <button className={link} disabled={disabled} onClick={() => onSelect(new Set(allIds()))}>
-            Marcar todas
+            {t("picker.markAll")}
           </button>
           <button className={link} disabled={disabled} onClick={() => onSelect(new Set())}>
-            Limpar seleção
+            {t("common.clearSelection")}
           </button>
           <button className={link} disabled={disabled || visible.length === 0} onClick={() => onSelect(invert(selected, visibleIds))}>
-            Inverter
+            {t("common.invert")}
           </button>
         </div>
         <div className="flex items-center gap-2">
           <input
             type="search"
             className="min-w-0 flex-1 rounded-md border border-fio bg-cafe px-2 py-1 text-sm"
-            placeholder="Buscar playlist"
+            placeholder={t("picker.search")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Buscar playlist por nome"
+            aria-label={t("picker.searchLabel")}
           />
           <button
             className="flex-none rounded-full border border-fio px-3 py-1 text-xs transition-colors hover:border-areia hover:bg-grafite-2 disabled:opacity-40"
             disabled={disabled || visible.length === 0}
             onClick={() => onSelect(setMany(selected, visibleIds, true))}
           >
-            Marcar filtradas ({visible.length})
+            {t("picker.markFiltered", { count: visible.length })}
           </button>
         </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtros rápidos">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("picker.quickLabel")}>
           {QUICK.map((q) => (
             <button
               key={q.id}
@@ -321,11 +324,11 @@ export function PlaylistPicker({
               }`}
               onClick={() => setQuick(q.id)}
             >
-              {q.label} {q.id !== "all" && `(${counts[q.id]})`}
+              {t(q.label)} {q.id !== "all" && `(${n(counts[q.id])})`}
             </button>
           ))}
         </div>
-        <p className="text-xs text-areia">Arraste ou use Shift+clique para marcar várias.</p>
+        <p className="text-xs text-areia">{t("picker.dragHint")}</p>
       </div>
       <ul
         ref={listRef}
@@ -337,7 +340,7 @@ export function PlaylistPicker({
         onPointerCancel={() => endDrag(false)}
         onLostPointerCapture={() => endDrag(true)}
       >
-        {visible.length === 0 && <li className="px-2 py-3 text-sm text-areia">Nenhuma playlist com esse filtro.</li>}
+        {visible.length === 0 && <li className="px-2 py-3 text-sm text-areia">{t("picker.noMatch")}</li>}
         {visible.map((p) => {
           const s = status.get(p.id);
           return (

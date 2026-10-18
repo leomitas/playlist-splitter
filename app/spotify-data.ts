@@ -69,7 +69,8 @@ export async function loadCreatedUris(p: Playlist, owner: Me): Promise<ApiResult
 export function likedAsPlaylist(summary: LikedSummary, me: Me): Playlist {
   return {
     id: LIKED_ID,
-    name: "Músicas curtidas",
+    // display name comes from the dictionary (by LIKED_ID); this one is only a fallback
+    name: "Liked songs",
     images: null,
     owner: { id: me.id, display_name: me.display_name },
     collaborative: false,

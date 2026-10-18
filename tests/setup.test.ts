@@ -40,9 +40,9 @@ describe("runConfigTest", () => {
     const checks = await runConfigTest(ENV, fakeFetch(400, { error: 10, message: "Invalid API key" }));
     const byId = Object.fromEntries(checks.map((c) => [c.id, c]));
     expect(byId.spotify.ok).toBe(false);
-    expect(byId.spotify.hint).toMatch(/Client ID ou Client Secret/);
+    expect(byId.spotify.hint).toBe("spotify-credentials");
     expect(byId.lastfm.ok).toBe(false);
-    expect(byId.lastfm.hint).toMatch(/API key/);
+    expect(byId.lastfm.hint).toBe("lastfm-key");
   });
 
   it("missing variables skip the remote checks; localhost in AUTH_URL is flagged", async () => {

@@ -83,8 +83,6 @@ Target: every click under ~15 ms in the browser. Browser click latency was not r
 ## Roadmap
 
 - Import the Spotify data export (privacy download) to analyze without API calls.
-- Interface translation (English).
-- Light theme.
 - More genre families and tags.
 - Detect unliked tracks in "Sincronizar curtidas" without a full re-read.
 

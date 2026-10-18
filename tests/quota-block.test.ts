@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createBlockStore, formatBlockLeft } from "@/lib/quota-block";
+import { blockLeft, createBlockStore, formatBlockEnd } from "@/lib/quota-block";
 import { createRequestQueue } from "@/lib/request-queue";
 import type { ApiResult } from "@/lib/spotify";
 
@@ -81,7 +81,15 @@ describe("long Retry-After blocks instead of retrying", () => {
   });
 
   it("formats the time left", () => {
-    expect(formatBlockLeft(30_000)).toBe("1m");
-    expect(formatBlockLeft(125 * 60_000)).toBe("2h 05m");
+    expect(blockLeft(30_000)).toEqual({ hours: 0, minutes: 1 });
+    expect(blockLeft(0)).toBeNull();
+    expect(blockLeft(125 * 60_000)).toEqual({ hours: 2, minutes: 5 });
+  });
+
+  it("formats the end time per locale, with the date only on another day", () => {
+    const now = new Date(2026, 9, 18, 9, 0).getTime();
+    expect(formatBlockEnd(new Date(2026, 9, 18, 14, 5).getTime(), now, "pt-BR")).toBe("14:05");
+    expect(formatBlockEnd(new Date(2026, 9, 19, 14, 5).getTime(), now, "pt-BR")).toBe("19/10, 14:05");
+    expect(formatBlockEnd(new Date(2026, 9, 18, 14, 5).getTime(), now, "en")).toBe("02:05 PM");
   });
 });

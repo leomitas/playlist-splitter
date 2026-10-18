@@ -14,6 +14,7 @@ import {
   spotifyGet,
   spotifyPost,
   type ApiResult,
+  type AppErrorCode,
   type Me,
 } from "@/lib/spotify";
 
@@ -27,11 +28,11 @@ async function token(): Promise<string | null> {
   return session?.accessToken && !session.error ? session.accessToken : null;
 }
 
-const fail = (method: string, url: string, status: number | null, raw: string) =>
-  ({ ok: false, method, url, status, raw }) as const;
+const fail = (method: string, url: string, status: number | null, code: AppErrorCode, raw: string) =>
+  ({ ok: false, method, url, status, code, raw }) as const;
 
 const notAuthenticated = (method: string, url: string) =>
-  fail(method, url, 401, "Sessão expirada ou ausente. Entre novamente.");
+  fail(method, url, 401, "session-expired", "Session expired or missing.");
 
 export async function getMe() {
   const t = await token();
@@ -49,7 +50,7 @@ export async function getTracksPage(playlistId: string, offset: number, limit = 
   const url = `/playlists/${playlistId}/items`;
   const t = await token();
   if (!t) return notAuthenticated("GET", url);
-  if (!SPOTIFY_ID.test(playlistId)) return fail("GET", url, null, "ID de playlist inválido.");
+  if (!SPOTIFY_ID.test(playlistId)) return fail("GET", url, null, "invalid-playlist-id", "Invalid playlist id.");
   return getPlaylistTracksPage(playlistId, Math.max(0, Math.floor(offset)), t, pageLimit(limit));
 }
 
@@ -74,7 +75,7 @@ export async function createPlaylist(
   if (!t) return notAuthenticated("POST", "/me/playlists");
 
   const trimmed = name.trim().slice(0, 100);
-  if (!trimmed) return fail("POST", "/me/playlists", null, "Nome vazio.");
+  if (!trimmed) return fail("POST", "/me/playlists", null, "empty-name", "Empty name.");
 
   const res = await spotifyPost<{ id: string; external_urls: { spotify: string }; snapshot_id: string }>("/me/playlists", t, {
     name: trimmed,
@@ -98,7 +99,7 @@ export async function addTracks(
   if (!t) return notAuthenticated("POST", url);
 
   if (!SPOTIFY_ID.test(playlistId) || uris.length === 0 || uris.length > BATCH_SIZE || !uris.every((u) => TRACK_URI.test(u))) {
-    return fail("POST", url, null, "Lote inválido (ID, quantidade ou URI).");
+    return fail("POST", url, null, "invalid-batch", "Invalid batch (id, size or URI).");
   }
   return spotifyPost<{ snapshot_id: string }>(url, t, { uris });
 }

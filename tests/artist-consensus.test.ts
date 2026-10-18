@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyArtistConsensus, consensusFamily } from "@/lib/artist-consensus";
+import { LOW_INCOHERENT } from "@/lib/classify";
 import { OTHER } from "@/lib/genre-families";
 import { many, track } from "./helpers";
 
@@ -41,13 +42,13 @@ describe("applyArtistConsensus", () => {
   });
 
   it("clears low confidence when the artist agrees, and counts it", () => {
-    const low = track({ artist: "Alguém", family: "Indie", lowConfidence: "tags fora do padrão da seleção" });
+    const low = track({ artist: "Alguém", family: "Indie", lowConfidence: LOW_INCOHERENT });
     const tracks = [...many(2, { artist: "Alguém", family: "Rock" }), low];
     const stats = applyArtistConsensus(tracks);
 
     expect(low.family).toBe("Rock");
     expect(low.lowConfidence).toBeUndefined();
-    expect(low.inferredFrom).toEqual({ family: "Indie", lowConfidence: "tags fora do padrão da seleção" });
+    expect(low.inferredFrom).toEqual({ family: "Indie", lowConfidence: LOW_INCOHERENT });
     expect(stats).toEqual({ inferred: 1, fromOther: 0, noLongerLow: 1 });
   });
 

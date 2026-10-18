@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyTrack, hasFamilyTag, markIncoherent, normalizeName } from "@/lib/classify";
+import { classifyTrack, hasFamilyTag, LOW_INCOHERENT, lowConfidenceReason, markIncoherent, normalizeName } from "@/lib/classify";
 import { GENRE_FAMILIES, OTHER, TAG_TO_FAMILY } from "@/lib/genre-families";
 import type { Lookup } from "@/lib/lastfm";
 
@@ -79,7 +79,7 @@ describe("markIncoherent", () => {
     const rock = (artist: string) => ({ ...classify(tags(["rock", 100], ["indie rock", 50]), null, artist), key: artist });
     const tracks = [rock("A"), rock("B"), rock("C"), rock("D"), rock("E"), { ...classify(tags(["k-pop", 100]), null, "Z"), key: "Z" }];
     markIncoherent(tracks);
-    expect(tracks.at(-1)!.lowConfidence).toBe("tags fora do padrão da seleção");
+    expect(tracks.at(-1)!.lowConfidence).toBe(LOW_INCOHERENT);
     expect(tracks[0].lowConfidence).toBeUndefined();
   });
 
@@ -111,6 +111,19 @@ describe("markIncoherent", () => {
     ];
     const tracks = [...mainstream(), ...pair];
     markIncoherent(tracks);
-    expect(pair.every((t) => t.lowConfidence === "tags fora do padrão da seleção")).toBe(true);
+    expect(pair.every((t) => t.lowConfidence === LOW_INCOHERENT)).toBe(true);
+  });
+});
+
+describe("lowConfidenceReason", () => {
+  it("reads the codes and the Portuguese texts of older analyses", () => {
+    expect(lowConfidenceReason(LOW_INCOHERENT)).toEqual({ kind: "incoherent" });
+    expect(lowConfidenceReason("tags fora do padrão da seleção")).toEqual({ kind: "incoherent" });
+    expect(lowConfidenceReason("corrected:Caetano Veloso")).toEqual({ kind: "corrected", artist: "Caetano Veloso" });
+    expect(lowConfidenceReason('Last.fm corrigiu o artista para "Caetano Veloso"')).toEqual({
+      kind: "corrected",
+      artist: "Caetano Veloso",
+    });
+    expect(lowConfidenceReason("algo novo")).toEqual({ kind: "other", text: "algo novo" });
   });
 });

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Atkinson_Hyperlegible } from "next/font/google";
+import { DEFAULT_LOCALE, translate } from "@/lib/i18n";
 import { BOOT_SCRIPT } from "./boot-script";
 import "./globals.css";
 
@@ -18,12 +19,13 @@ const atkinson = Atkinson_Hyperlegible({
 
 export const metadata: Metadata = {
   title: "Playlist Splitter",
-  description: "Separa as músicas das suas playlists do Spotify por gênero e cria playlists novas.",
+  // the server renders the default language; the description stays in it
+  description: translate(DEFAULT_LOCALE, "meta.description"),
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // the head script sets data-theme before hydration, hence suppressHydrationWarning
+    // the head script sets data-theme and lang before hydration, hence suppressHydrationWarning
     <html
       lang="pt-BR"
       className={`${archivo.variable} ${atkinson.variable} min-h-full antialiased`}

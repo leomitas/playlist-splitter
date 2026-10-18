@@ -17,7 +17,7 @@ import type { ConsensusStats } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { buildExport } from "@/lib/export";
 import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
-import { loadSortBy, orderGroups, saveSortBy, SORT_LABELS, sortGroupIds, type SortBy } from "@/lib/group-order";
+import { loadSortBy, orderGroups, saveSortBy, SORT_OPTIONS, sortGroupIds, type SortBy } from "@/lib/group-order";
 import {
   initialState,
   pendingSync,
@@ -30,9 +30,8 @@ import {
 import { CreatePlaylists } from "./create-playlists";
 import { shownOn, useDragSelect } from "./use-drag-select";
 import { genreColor } from "./genre-colors";
+import { useI18n } from "./i18n";
 import { Segmented } from "./segmented";
-
-const SORT_OPTIONS = (Object.keys(SORT_LABELS) as SortBy[]).map((by) => ({ value: by, label: SORT_LABELS[by] }));
 
 const noopSubscribe = () => () => {};
 // tracks shown per step inside an open group
@@ -98,7 +97,8 @@ type PreviewProps = {
 export const Preview = memo(function Preview(props: PreviewProps) {
   // localStorage only exists in the browser; render the editor after hydration
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  if (!mounted) return <p className="text-areia">Carregando prévia…</p>;
+  const { t } = useI18n();
+  if (!mounted) return <p className="text-areia">{t("preview.loading")}</p>;
   return <PreviewEditor {...props} />;
 });
 
@@ -111,6 +111,7 @@ function PreviewEditor({
   onSpotifyChanged,
   reorderToken,
 }: PreviewProps) {
+  const { t, rich, genre, groupName, locale } = useI18n();
   const fresh = useMemo(() => initialState(tracks), [tracks]);
   const [state, dispatch] = useReducer(reducer, null, () => loadSaved(storageKey, tracks) ?? fresh);
   const byKey = useMemo(() => new Map(tracks.map((t) => [t.key, t])), [tracks]);
@@ -122,8 +123,9 @@ function PreviewEditor({
   const [manualSort, setManualSort] = useState(0);
   const lowOf = (g: Group) => g.trackKeys.reduce((n, k) => n + (byKey.get(k)?.lowConfidence ? 1 : 0), 0);
   const sortTrigger = `${reorderToken}|${sortBy}|${manualSort}`;
-  const [sorted, setSorted] = useState(() => ({ trigger: sortTrigger, order: sortGroupIds(state.groups, sortBy, lowOf) }));
-  if (sorted.trigger !== sortTrigger) setSorted({ trigger: sortTrigger, order: sortGroupIds(state.groups, sortBy, lowOf) });
+  const sortNow = () => sortGroupIds(state.groups, sortBy, lowOf, groupName, locale);
+  const [sorted, setSorted] = useState(() => ({ trigger: sortTrigger, order: sortNow() }));
+  if (sorted.trigger !== sortTrigger) setSorted({ trigger: sortTrigger, order: sortNow() });
   const orderedGroups = useMemo(() => orderGroups(state.groups, sorted.order), [state.groups, sorted.order]);
 
   // genre search filters the cards (and what "Inverter" acts on)
@@ -131,8 +133,8 @@ function PreviewEditor({
   const deferredGenreQuery = useDeferredValue(genreQuery);
   const visibleGroups = useMemo(() => {
     const q = fold(deferredGenreQuery);
-    return q ? orderedGroups.filter((g) => fold(g.name).includes(q)) : orderedGroups;
-  }, [orderedGroups, deferredGenreQuery]);
+    return q ? orderedGroups.filter((g) => fold(groupName(g)).includes(q)) : orderedGroups;
+  }, [orderedGroups, deferredGenreQuery, groupName]);
   // "Expandir/Recolher todos": every card follows when n changes
   const [expand, setExpand] = useState({ open: false, n: 0 });
   // undo for "Só este": the checked state before it
@@ -171,9 +173,9 @@ function PreviewEditor({
         .filter(Boolean)
         .map((s) => {
           const [id, name] = s.split("\u0000");
-          return { id, name };
+          return { id, name: groupName({ id, name }) };
         }),
-    [optionsKey],
+    [optionsKey, groupName],
   );
   const autoMovedFamilies = useMemo(() => [...new Set(Object.values(state.autoMoved))], [state.autoMoved]);
 
@@ -208,23 +210,28 @@ function PreviewEditor({
     [cardDown, cardTap, cardKey],
   );
 
-  const onlyThis = useCallback((groupId: string) => {
-    const groups = latest.current.groups;
-    setUndo({
-      name: groups.find((g) => g.id === groupId)?.name ?? groupId,
-      include: Object.fromEntries(groups.map((g) => [g.id, g.include])),
-    });
-    dispatch({ type: "onlyThis", groupId });
-  }, []);
+  const onlyThis = useCallback(
+    (groupId: string) => {
+      const groups = latest.current.groups;
+      const group = groups.find((g) => g.id === groupId);
+      setUndo({
+        name: group ? groupName(group) : groupId,
+        include: Object.fromEntries(groups.map((g) => [g.id, g.include])),
+      });
+      dispatch({ type: "onlyThis", groupId });
+    },
+    [groupName],
+  );
   const spectrum = useMemo(() => {
     const total = deferredGroups.reduce((n, g) => n + g.trackKeys.length, 0);
     // largest first, "Funk (incerto)" and "Outros" last: the cards' default order
-    const bands = orderGroups(deferredGroups, sortGroupIds(deferredGroups, "size", () => 0))
+    const bands = orderGroups(deferredGroups, sortGroupIds(deferredGroups, "size", () => 0, groupName, locale))
       .filter((g) => g.trackKeys.length > 0)
-      .map((g) => ({ id: g.id, name: g.name, count: g.trackKeys.length, include: g.include }));
+      .map((g) => ({ id: g.id, name: groupName(g), count: g.trackKeys.length, include: g.include }));
     const genres = bands.filter((b) => b.id !== OTHER).length;
     return { total, bands, genres };
-  }, [deferredGroups]);
+  }, [deferredGroups, groupName, locale]);
+  const sortOptions = useMemo(() => SORT_OPTIONS.map((by) => ({ value: by, label: t(`sort.${by}`) })), [t]);
   const lowConfidence = useMemo(() => tracks.filter((t) => t.lowConfidence).length, [tracks]);
   const withoutFamily = useMemo(() => tracks.filter((t) => t.family === OTHER).length, [tracks]);
   // composition bars are relative to the largest group; a number, so cards only re-render when it changes
@@ -232,21 +239,29 @@ function PreviewEditor({
 
   return (
     <div className="flex flex-col gap-8">
-      <section aria-label="Composição da biblioteca" className="flex flex-col gap-5">
+      <section aria-label={t("preview.composition")} className="flex flex-col gap-5">
         <Spectrum bands={spectrum.bands} total={spectrum.total} include={includeNow} onApply={applyInclude} />
         <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:flex sm:flex-wrap sm:gap-x-12">
-          <Stat value={tracks.length} label="faixas únicas" />
-          <Stat value={spectrum.genres} label={spectrum.genres === 1 ? "gênero" : "gêneros"} />
-          <Stat value={lowConfidence} label="com baixa confiança" />
-          <Stat value={duplicates} label="repetidas removidas" />
+          <Stat value={tracks.length} label={t("stat.uniqueTracks", { count: tracks.length })} />
+          <Stat value={spectrum.genres} label={t("stat.genres", { count: spectrum.genres })} />
+          <Stat value={lowConfidence} label={t("stat.lowConfidence")} />
+          <Stat value={duplicates} label={t("stat.duplicates", { count: duplicates })} />
         </dl>
         {consensus.inferred > 0 && (
           <p className="text-sm text-areia">
-            <span className="font-bold text-papel">Consenso por artista:</span>{" "}
-            {fmt(consensus.inferred)} {consensus.inferred === 1 ? "faixa inferida" : "faixas inferidas"} pelo artista ·
-            sem família {fmt(withoutFamily + consensus.fromOther)} → {fmt(withoutFamily)} (
-            {fmt(consensus.fromOther)} saíram de {OTHER}) · baixa confiança {fmt(lowConfidence + consensus.noLongerLow)} →{" "}
-            {fmt(lowConfidence)}
+            {rich(
+              "consensus.line",
+              {
+                inferred: t("consensus.inferred", { count: consensus.inferred }),
+                before: withoutFamily + consensus.fromOther,
+                after: withoutFamily,
+                fromOther: consensus.fromOther,
+                other: genre(OTHER),
+                lowBefore: lowConfidence + consensus.noLongerLow,
+                lowAfter: lowConfidence,
+              },
+              { b: (c) => <span className="font-bold text-papel">{c}</span> },
+            )}
           </p>
         )}
       </section>
@@ -254,14 +269,14 @@ function PreviewEditor({
       <section aria-labelledby="genres-title" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 id="genres-title" className="text-lg font-bold">
-            Gêneros
+            {t("preview.genres")}
           </h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-2 text-sm text-areia">
-              <span aria-hidden>Ordenar por</span>
+              <span aria-hidden>{t("preview.sortBy")}</span>
               <Segmented
-                label="Ordenar por"
-                options={SORT_OPTIONS}
+                label={t("preview.sortBy")}
+                options={sortOptions}
                 value={sortBy}
                 onChange={(by) => {
                   setSortBy(by);
@@ -272,23 +287,26 @@ function PreviewEditor({
             <button
               className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
               onClick={() => setManualSort((n) => n + 1)}
-              title="Aplica a ordem escolhida de novo (a lista não se reordena sozinha enquanto você edita)"
+              title={t("preview.reorderTitle")}
             >
-              Reordenar
+              {t("preview.reorder")}
             </button>
             <button
               className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
               onClick={() =>
-                downloadJson(buildExport(state.groups, byKey), `classificacao-${new Date().toISOString().slice(0, 10)}.json`)
+                downloadJson(
+                  buildExport(state.groups, byKey),
+                  t("preview.exportFile", { date: new Date().toISOString().slice(0, 10) }),
+                )
               }
             >
-              Exportar classificação (JSON)
+              {t("preview.export")}
             </button>
             <button
               className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
               onClick={() => dispatch({ type: "reset", state: fresh })}
             >
-              Desfazer edições
+              {t("preview.reset")}
             </button>
           </div>
         </div>
@@ -296,30 +314,33 @@ function PreviewEditor({
         <div className="flex flex-col gap-2 rounded-xl border border-fio bg-grafite/60 p-3 text-sm">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="font-bold" aria-live="polite">
-              {fmt(marked.groups)} de {fmt(deferredGroups.length)} marcados{" "}
-              <span className="font-normal text-areia">· {fmt(marked.tracks)} faixas</span>
+              {rich(
+                "preview.marked",
+                { marked: marked.groups, total: deferredGroups.length, tracks: t("common.tracks", { count: marked.tracks }) },
+                { muted: (c) => <span className="font-normal text-areia">{c}</span> },
+              )}
             </p>
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               <button className={toolLink} onClick={() => include({ type: "setInclude", groupIds: "all", on: true })}>
-                Marcar todos
+                {t("preview.markAll")}
               </button>
               <button className={toolLink} onClick={() => include({ type: "setInclude", groupIds: "all", on: false })}>
-                Limpar
+                {t("preview.clear")}
               </button>
               <button
                 className={toolLink}
                 disabled={visibleGroups.length === 0}
                 onClick={() => include({ type: "invertInclude", groupIds: visibleGroups.map((g) => g.id) })}
-                title={genreQuery ? "Inverte só os gêneros que aparecem na busca" : undefined}
+                title={genreQuery ? t("preview.invertTitle") : undefined}
               >
-                Inverter
+                {t("common.invert")}
               </button>
               <button
                 className={toolLink}
                 onClick={() => include({ type: "includeRecommended" })}
-                title={`Todos, exceto ${OTHER} e ${FUNK_UNCERTAIN}`}
+                title={t("preview.recommendedTitle", { other: genre(OTHER), uncertain: genre(FUNK_UNCERTAIN) })}
               >
-                Marcar recomendados
+                {t("preview.recommended")}
               </button>
             </div>
           </div>
@@ -327,21 +348,21 @@ function PreviewEditor({
             <input
               type="search"
               className="min-w-0 flex-1 rounded-md border border-fio bg-cafe px-2 py-1 sm:max-w-64"
-              placeholder="Buscar gênero"
+              placeholder={t("preview.searchGenre")}
               value={genreQuery}
               onChange={(e) => setGenreQuery(e.target.value)}
-              aria-label="Buscar gênero pelo nome"
+              aria-label={t("preview.searchGenreLabel")}
             />
             <button className={toolLink} onClick={() => setExpand((x) => ({ open: true, n: x.n + 1 }))}>
-              Expandir todos
+              {t("preview.expandAll")}
             </button>
             <button className={toolLink} onClick={() => setExpand((x) => ({ open: false, n: x.n + 1 }))}>
-              Recolher todos
+              {t("preview.collapseAll")}
             </button>
           </div>
           {undo && (
             <p className="text-areia" role="status">
-              Só <span className="font-bold text-papel">{undo.name}</span> ficou marcado.{" "}
+              {rich("preview.onlyKept", { name: undo.name }, { b: (c) => <span className="font-bold text-papel">{c}</span> })}{" "}
               <button
                 className="text-papel underline underline-offset-4"
                 onClick={() => {
@@ -349,14 +370,14 @@ function PreviewEditor({
                   setUndo(null);
                 }}
               >
-                Desfazer
+                {t("common.undo")}
               </button>
             </p>
           )}
         </div>
 
         <div className="flex flex-col gap-2">
-          {visibleGroups.length === 0 && <p className="text-sm text-areia">Nenhum gênero com esse nome.</p>}
+          {visibleGroups.length === 0 && <p className="text-sm text-areia">{t("preview.noGenre")}</p>}
           {visibleGroups.map((g) => (
             <GroupCard
               key={g.id}
@@ -398,7 +419,6 @@ function PreviewEditor({
 
 type Band = { id: string; name: string; count: number; include: boolean };
 const LABELED = 5;
-const fmt = (n: number) => n.toLocaleString("pt-BR");
 
 // One band per group, as wide as its share. The 5 largest carry their name (and get a minimum
 // width so it fits); hovering any band shows its name and count.
@@ -414,6 +434,7 @@ const Spectrum = memo(function Spectrum({
   include: Map<string, boolean>;
   onApply: (ids: string[], on: boolean) => void;
 }) {
+  const { t, n } = useI18n();
   // hovered/focused band and its center in px; the tooltip sits below it (above, it would slide under the sticky header)
   const [hover, setHover] = useState<{ id: string; x: number } | null>(null);
   const labeled = useMemo(
@@ -432,7 +453,7 @@ const Spectrum = memo(function Spectrum({
       <div
         className={`split-in flex h-16 gap-0.5 overflow-hidden rounded-lg sm:h-20 ${select.preview ? "select-none" : ""}`}
         role="group"
-        aria-label="Espectro de gêneros: cada faixa marca ou desmarca o gênero"
+        aria-label={t("spectrum.label")}
         onMouseLeave={() => setHover(null)}
       >
         {bands.map((b) => {
@@ -445,7 +466,12 @@ const Spectrum = memo(function Spectrum({
               role="button"
               tabIndex={0}
               aria-pressed={on}
-              aria-label={`${b.name}: ${fmt(b.count)} ${b.count === 1 ? "faixa" : "faixas"}, ${percent}%, ${on ? "marcado" : "desmarcado"}`}
+              aria-label={t("spectrum.band", {
+                name: b.name,
+                tracks: t("common.tracks", { count: b.count }),
+                percent,
+                state: t(on ? "common.checked" : "common.unchecked"),
+              })}
               data-drag-id={b.id}
               onPointerDown={(e) => select.onPointerDown(b.id, e)}
               onClick={(e) => select.onTap(b.id, e)}
@@ -471,7 +497,7 @@ const Spectrum = memo(function Spectrum({
             >
               {labeled.has(b.id) && (
                 <>
-                  <span className="num truncate text-lg sm:text-2xl">{fmt(b.count)}</span>
+                  <span className="num truncate text-lg sm:text-2xl">{n(b.count)}</span>
                   <span className="truncate text-xs font-bold sm:text-sm">{b.name}</span>
                 </>
               )}
@@ -488,8 +514,11 @@ const Spectrum = memo(function Spectrum({
           <span className="size-2.5 flex-none self-center rounded-full" style={{ background: genreColor(shown.id) }} />
           <span className="font-bold">{shown.name}</span>
           <span className="text-areia">
-            {fmt(shown.count)} {shown.count === 1 ? "faixa" : "faixas"} · {Math.round((shown.count / Math.max(1, total)) * 100)}% ·{" "}
-            {shownOn(select.preview, shown.id, isOn(shown.id)) ? "marcado" : "desmarcado"}
+            {t("spectrum.tooltip", {
+              tracks: t("common.tracks", { count: shown.count }),
+              percent: Math.round((shown.count / Math.max(1, total)) * 100),
+              state: t(shownOn(select.preview, shown.id, isOn(shown.id)) ? "common.checked" : "common.unchecked"),
+            })}
           </span>
         </div>
       )}
@@ -498,10 +527,11 @@ const Spectrum = memo(function Spectrum({
 });
 
 function Stat({ value, label }: { value: number; label: string }) {
+  const { n } = useI18n();
   return (
     <div className="flex flex-col-reverse gap-1">
       <dt className="text-sm text-areia">{label}</dt>
-      <dd className="num text-5xl sm:text-6xl">{value.toLocaleString("pt-BR")}</dd>
+      <dd className="num text-5xl sm:text-6xl">{n(value)}</dd>
     </div>
   );
 }
@@ -535,6 +565,8 @@ const GroupCard = memo(function GroupCard({
   autoMovedFamilies: string[];
   dispatch: Dispatch<Action>;
 }) {
+  const { t, n, genre, groupName } = useI18n();
+  const name = groupName(g);
   const [open, setOpen] = useState(expand.open);
   const [expandSeen, setExpandSeen] = useState(expand.n);
   if (expandSeen !== expand.n) {
@@ -592,7 +624,7 @@ const GroupCard = memo(function GroupCard({
                 select.onKeyToggle(g.id, true);
               }}
               onClick={(e) => e.stopPropagation()}
-              aria-label={`Criar playlist de ${g.name}`}
+              aria-label={t("card.create", { name })}
             />
           </span>
           <svg aria-hidden viewBox="0 0 16 16" className="chevron size-4 flex-none text-areia">
@@ -600,11 +632,11 @@ const GroupCard = memo(function GroupCard({
           </svg>
           <input
             className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-bold transition-colors select-text hover:border-fio focus:border-areia focus:bg-cafe focus:outline-none"
-            value={g.name}
+            value={name}
             onChange={(e) => dispatch({ type: "rename", groupId: g.id, name: e.target.value })}
             onClick={(e) => e.preventDefault()}
             onKeyDown={(e) => e.key === " " && e.stopPropagation()}
-            aria-label="Nome da playlist"
+            aria-label={t("card.playlistName")}
           />
           <button
             type="button"
@@ -615,13 +647,13 @@ const GroupCard = memo(function GroupCard({
               e.stopPropagation();
               onOnly(g.id);
             }}
-            aria-label={`Marcar só ${g.name}`}
-            title="Marca só este gênero e desmarca os outros"
+            aria-label={t("card.onlyLabel", { name })}
+            title={t("card.onlyTitle")}
           >
-            Só este
+            {t("card.only")}
           </button>
           <span className="num text-4xl" style={{ color: g.include ? color : "var(--color-areia)" }}>
-            {count.toLocaleString("pt-BR")}
+            {n(count)}
           </span>
         </div>
         <div className="flex items-center gap-3 pl-9">
@@ -634,7 +666,7 @@ const GroupCard = memo(function GroupCard({
             </div>
           </div>
           <span className="flex-none text-right text-sm text-areia sm:w-44">
-            {low > 0 ? `${low.toLocaleString("pt-BR")} de baixa confiança` : "todas com confiança"}
+            {low > 0 ? t("card.low", { count: low }) : t("card.allConfident")}
           </span>
         </div>
       </summary>
@@ -643,7 +675,7 @@ const GroupCard = memo(function GroupCard({
         <div className="border-t border-fio">
           <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
             <label htmlFor={`merge-${g.id}`} className="text-areia">
-              Juntar este grupo com
+              {t("card.mergeLabel")}
             </label>
             <select
               id={`merge-${g.id}`}
@@ -651,7 +683,7 @@ const GroupCard = memo(function GroupCard({
               value={target}
               onChange={(e) => setMergeTarget(e.target.value)}
             >
-              <option value="">escolha um grupo</option>
+              <option value="">{t("card.mergePick")}</option>
               {groupOptions
                 .filter((o) => o.id !== g.id)
                 .map((o) => (
@@ -665,13 +697,13 @@ const GroupCard = memo(function GroupCard({
               disabled={!target}
               onClick={() => dispatch({ type: "merge", fromId: g.id, intoId: target })}
             >
-              Juntar
+              {t("card.merge")}
             </button>
           </div>
 
           {autoMovedFamilies.length > 0 && (
             <div className="mx-4 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-fio p-3 text-sm">
-              <span className="text-areia">Gêneros com menos de 3 faixas vieram para cá:</span>
+              <span className="text-areia">{t("card.autoMoved")}</span>
               {autoMovedFamilies.map((f) => (
                 <button
                   key={f}
@@ -679,7 +711,7 @@ const GroupCard = memo(function GroupCard({
                   style={{ borderColor: genreColor(f), color: genreColor(f) }}
                   onClick={() => dispatch({ type: "restoreAutoMoved", family: f })}
                 >
-                  Recriar {f}
+                  {t("card.recreate", { name: genre(f) })}
                 </button>
               ))}
             </div>
@@ -718,6 +750,7 @@ const LowConfidenceCard = memo(function LowConfidenceCard({
   autoMoved: Record<string, string>;
   dispatch: Dispatch<Action>;
 }) {
+  const { t, n } = useI18n();
   const [open, setOpen] = useState(false);
   const showRows = useDeferredValue(open);
   // built only while open: closed, a move elsewhere costs nothing here
@@ -741,8 +774,8 @@ const LowConfidenceCard = memo(function LowConfidenceCard({
         <svg aria-hidden viewBox="0 0 16 16" className="chevron size-4 flex-none text-areia">
           <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
-        <span className="flex-1 text-lg font-bold">Revisar baixa confiança de todos os grupos</span>
-        <span className="num text-4xl text-alerta">{fmt(count)}</span>
+        <span className="flex-1 text-lg font-bold">{t("lowCard.title")}</span>
+        <span className="num text-4xl text-alerta">{n(count)}</span>
       </summary>
       {showRows && (
         <div className="border-t border-fio">
@@ -795,6 +828,7 @@ const ReviewList = memo(function ReviewList({
   dispatch: Dispatch<Action>;
   onlyLow?: boolean;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -866,21 +900,21 @@ const ReviewList = memo(function ReviewList({
         <input
           type="search"
           className={`${field} min-w-0 flex-1 sm:max-w-64`}
-          placeholder="Buscar artista ou faixa"
+          placeholder={t("review.search")}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setLimit(PAGE);
           }}
-          aria-label="Buscar artista ou faixa"
+          aria-label={t("review.search")}
         />
         {!onlyLow && (
           <Segmented
-            label="Filtrar faixas"
+            label={t("review.filter")}
             options={[
-              { value: "all", label: "Todas" },
-              { value: "low", label: `Só baixa confiança (${fmt(counts.low)})` },
-              { value: "inferred", label: `Só inferidas pelo artista (${fmt(counts.inferred)})` },
+              { value: "all", label: t("review.all") },
+              { value: "low", label: t("review.low", { count: counts.low }) },
+              { value: "inferred", label: t("review.inferred", { count: counts.inferred }) },
             ]}
             value={filter}
             onChange={(f) => {
@@ -897,7 +931,7 @@ const ReviewList = memo(function ReviewList({
             disabled={filtered.length === 0}
             onChange={() => setSelected(allChosen ? new Set() : new Set(filtered.map((e) => e.key)))}
           />
-          Selecionar todas as filtradas ({fmt(filtered.length)})
+          {t("review.selectAll", { count: filtered.length })}
         </label>
       </div>
 
@@ -905,46 +939,46 @@ const ReviewList = memo(function ReviewList({
         <div
           className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-y border-fio bg-grafite-2 px-4 py-2 text-sm"
           role="toolbar"
-          aria-label="Ações com as faixas selecionadas"
+          aria-label={t("review.toolbar")}
         >
           <span className="font-bold">
-            {fmt(chosen.length)} {chosen.length === 1 ? "selecionada" : "selecionadas"}
+            {t("review.selected", { count: chosen.length })}
           </span>
-          <select className={field} value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Mover para">
-            <option value="">Mover para…</option>
+          <select className={field} value={target} onChange={(e) => setTarget(e.target.value)} aria-label={t("review.moveTo")}>
+            <option value="">{t("review.moveToPick")}</option>
             {targets.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}
               </option>
             ))}
-            <option value={NEW_GROUP}>Novo grupo…</option>
+            <option value={NEW_GROUP}>{t("review.newGroup")}</option>
           </select>
           {target === NEW_GROUP && (
             <input
               className={field}
-              placeholder="Nome do grupo novo"
+              placeholder={t("review.newGroupName")}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && newName.trim() && apply()}
-              aria-label="Nome do grupo novo"
+              aria-label={t("review.newGroupName")}
               autoFocus
             />
           )}
           <button className={pill} disabled={!target || (target === NEW_GROUP && !newName.trim())} onClick={apply}>
-            Mover
+            {t("review.move")}
           </button>
           {currentGroupId !== OTHER && (
             <button className={pill} onClick={() => moveTo(OTHER)}>
-              Mover para {OTHER}
+              {t("review.moveToGroup", { name: groupOptions.find((o) => o.id === OTHER)?.name ?? OTHER })}
             </button>
           )}
           <button className="ml-auto text-areia underline-offset-4 hover:text-papel hover:underline" onClick={done}>
-            Limpar seleção
+            {t("common.clearSelection")}
           </button>
         </div>
       )}
 
-      {filtered.length === 0 && <p className="px-4 pb-3 text-sm text-areia">Nenhuma faixa com esse filtro.</p>}
+      {filtered.length === 0 && <p className="px-4 pb-3 text-sm text-areia">{t("review.noMatch")}</p>}
       <ul className="flex flex-col">
         {filtered.slice(0, limit).map(({ key, groupId }) => {
           const t = byKey.get(key);
@@ -968,7 +1002,7 @@ const ReviewList = memo(function ReviewList({
           className="m-3 rounded-full border border-fio px-4 py-1.5 text-sm transition-colors hover:border-papel"
           onClick={() => setLimit(limit + PAGE)}
         >
-          Mostrar mais {Math.min(PAGE, filtered.length - limit)} (exibindo {limit} de {fmt(filtered.length)})
+          {t("review.showMore", { more: Math.min(PAGE, filtered.length - limit), shown: limit, total: filtered.length })}
         </button>
       )}
     </>
@@ -994,6 +1028,7 @@ const TrackRow = memo(function TrackRow({
   onSelect: (key: string) => void;
   dispatch: Dispatch<Action>;
 }) {
+  const i18n = useI18n();
   return (
     <li
       className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-fio/60 px-4 py-2 ${
@@ -1005,36 +1040,45 @@ const TrackRow = memo(function TrackRow({
         className="check"
         checked={selected}
         onChange={() => onSelect(t.key)}
-        aria-label={`Selecionar ${t.name}`}
+        aria-label={i18n.t("track.select", { name: t.name })}
       />
       <div className="min-w-0 flex-1">
         <p className="truncate">
-          {t.name} <span className="text-areia">de {t.artist}</span>
-          {groupLabel && <span className="text-areia"> · em {groupLabel}</span>}
+          {t.name} <span className="text-areia">{i18n.t("track.by", { artist: t.artist })}</span>
+          {groupLabel && <span className="text-areia"> {i18n.t("track.in", { group: groupLabel })}</span>}
         </p>
         <p className="truncate text-sm text-areia">
-          {t.tags.length > 0 ? t.tags.join(", ") : "nenhuma tag conhecida"}
-          {autoMovedFrom && `, sugerido de ${autoMovedFrom}`}
+          {t.tags.length > 0 ? t.tags.join(", ") : i18n.t("track.noTags")}
+          {autoMovedFrom && i18n.t("track.suggestedFrom", { family: i18n.genre(autoMovedFrom) })}
           {t.inferredFrom && (
             <span
               className="ml-2 rounded-full border border-fio px-2 py-px text-xs"
-              title={`Antes: ${t.inferredFrom.family}${t.inferredFrom.lowConfidence ? ` (baixa confiança: ${t.inferredFrom.lowConfidence})` : ""}`}
+              title={
+                t.inferredFrom.lowConfidence
+                  ? i18n.t("track.beforeLow", {
+                      family: i18n.genre(t.inferredFrom.family),
+                      reason: i18n.lowReason(t.inferredFrom.lowConfidence),
+                    })
+                  : i18n.t("track.before", { family: i18n.genre(t.inferredFrom.family) })
+              }
             >
-              inferida pelo artista
+              {i18n.t("track.inferred")}
             </span>
           )}
         </p>
-        {t.lowConfidence && <p className="text-sm text-alerta">Baixa confiança: {t.lowConfidence}</p>}
+        {t.lowConfidence && (
+          <p className="text-sm text-alerta">{i18n.t("track.lowConfidence", { reason: i18n.lowReason(t.lowConfidence) })}</p>
+        )}
       </div>
       <select
         className="max-w-48 rounded-md border border-fio bg-cafe px-2 py-1 text-sm"
         value={groupId}
         onChange={(e) => dispatch({ type: "move", trackKey: t.key, toGroupId: e.target.value })}
-        aria-label={`Mover ${t.name} para outro grupo`}
+        aria-label={i18n.t("track.moveLabel", { name: t.name })}
       >
         {groupOptions.map((o) => (
           <option key={o.id} value={o.id}>
-            {o.id === groupId ? `${o.name} (atual)` : `Mover para ${o.name}`}
+            {o.id === groupId ? i18n.t("track.current", { name: o.name }) : i18n.t("review.moveToGroup", { name: o.name })}
           </option>
         ))}
       </select>

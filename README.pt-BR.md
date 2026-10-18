@@ -83,8 +83,6 @@ Meta: todo clique abaixo de ~15 ms no navegador. A latência de clique no navega
 ## Roadmap
 
 - Importar o arquivo de dados do Spotify (download de privacidade) para analisar sem chamadas à API.
-- Tradução da interface (inglês).
-- Tema claro.
 - Mais famílias e tags de gênero.
 - Detectar descurtidas em "Sincronizar curtidas" sem releitura completa.
 

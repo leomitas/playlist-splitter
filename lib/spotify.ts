@@ -44,7 +44,20 @@ export type ApiError = {
   retryAfter?: number;
   // set when the call was refused because Spotify blocked the app until this time (ms)
   blockedUntil?: number;
+  // set on errors the app produces itself: the UI shows a translated message (with `vars`)
+  // and `raw` stays a technical English line
+  code?: AppErrorCode;
+  vars?: Record<string, string>;
 };
+export type AppErrorCode =
+  | "session-expired"
+  | "invalid-playlist-id"
+  | "empty-name"
+  | "invalid-batch"
+  | "empty-artist"
+  | "config-missing"
+  | "spotify-blocked"
+  | "liked-not-cached";
 export type ApiResult<T> = { ok: true; data: T } | ({ ok: false } & ApiError);
 
 // firstAddedAt: added_at of the page's first item (liked songs use it as a version marker)

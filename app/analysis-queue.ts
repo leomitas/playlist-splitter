@@ -115,14 +115,14 @@ const playlistTotal = (p: Playlist) => (p.items ?? p.tracks)?.total ?? null;
 async function classifyFresh(fresh: PlaylistTrack[], stop: () => Promise<boolean>, onDone: (done: number) => void) {
   let fatal: ApiError | null = null;
   const untagged: UntaggedTrack[] = [];
-  const noteFailure = (t: PlaylistTrack, e: ApiError, what: "artista" | "faixa") => {
+  const noteFailure = (t: PlaylistTrack, e: ApiError, what: "artist" | "track") => {
     if (e.status === 401) fatal ??= e;
     else
       untagged.push({
         name: t.name,
         artist: t.artists[0] ?? "",
         reason: lookupFailureReason(e),
-        detail: `${what}: ${e.status ?? "sem resposta"} ${e.raw}`.slice(0, 300),
+        detail: `${what}: ${e.status ?? "no response"} ${e.raw}`.slice(0, 300),
       });
   };
   let done = 0;
@@ -135,17 +135,17 @@ async function classifyFresh(fresh: PlaylistTrack[], stop: () => Promise<boolean
 
       if (!artist) {
         // Spotify returns name "" and artist "" for unavailable tracks; nothing to look up
-        untagged.push({ name: t.name, artist: "", reason: "entrada inválida", detail: "artista vazio" });
+        untagged.push({ name: t.name, artist: "", reason: "entrada inválida", detail: "empty artist" });
       } else {
         const a = await getArtistTags(artist, stop);
         if (a.ok) artistTags = a.data;
-        else noteFailure(t, a, "artista");
+        else noteFailure(t, a, "artist");
 
         // track tags only when the artist's tags don't already give a family
         if (a.ok && !hasFamilyTag(artistTags) && t.name.trim()) {
           const tr = await getTrackTags(artist, t.name.trim(), stop);
           if (tr.ok) trackTags = tr.data;
-          else noteFailure(t, tr, "faixa");
+          else noteFailure(t, tr, "track");
         }
       }
 
@@ -368,7 +368,7 @@ export const analysis = {
     if (!cachedLiked) {
       setSync({
         state: "erro",
-        error: { url: "/me/tracks", status: null, raw: "Faixas curtidas não estão no cache deste navegador. Use a reanálise completa." },
+        error: { url: "/me/tracks", status: null, code: "liked-not-cached", raw: "Liked songs are not cached in this browser." },
       });
       return;
     }

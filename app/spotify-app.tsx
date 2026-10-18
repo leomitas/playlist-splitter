@@ -17,9 +17,13 @@ import { QuotaBanner, useSpotifyBlock } from "./quota-banner";
 import { RawError } from "./raw-error";
 import { SetupLink } from "./setup-link";
 import { Steps } from "./steps";
+import { useI18n, useRevealText } from "./i18n";
 import { likedAsPlaylist, loadLikedSummary, loadMe, loadPlaylists } from "./spotify-data";
 
 export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  useRevealText();
   const [me, setMe] = useState<ApiResult<Me> | null>(null);
   const [playlists, setPlaylists] = useState<ApiResult<Playlist[]> | null>(null);
   const [liked, setLiked] = useState<ApiResult<LikedSummary> | null>(null);
@@ -91,10 +95,10 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
     () =>
       readable.map((p) => ({
         id: p.id,
-        name: liked?.ok && p.id === LIKED_ID ? `${p.name} (${liked.data.total.toLocaleString("pt-BR")})` : p.name,
+        name: liked?.ok && p.id === LIKED_ID ? t("liked.nameCount", { count: liked.data.total }) : p.name,
         snapshotId: p.snapshot_id,
       })),
-    [readable, liked],
+    [readable, liked, t],
   );
   // status and snapshot per playlist in the current run, for the picker's quick filters
   const analysisInfo = useMemo(
@@ -108,7 +112,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   const onSpotifyChanged = useCallback(() => refreshPlaylists(false), [refreshPlaylists]);
 
   // per-playlist analysis status, shown next to each playlist in the list
-  const statusById = useMemo(() => new Map(run?.items.map((i) => [i.id, itemStatus(run, i)])), [run]);
+  const statusById = useMemo(() => new Map(run?.items.map((i) => [i.id, itemStatus(i18n, run, i)])), [run, i18n]);
 
   const active = run?.phase === "running" || run?.phase === "paused";
   const syncing = run?.sync?.state === "lendo" || run?.sync?.state === "gêneros";
@@ -135,7 +139,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
     const ids = new Set(run.items.map((i) => i.id));
     const again = readable.filter((p) => ids.has(p.id));
     if (again.length === 0) return;
-    if (!window.confirm("Ler todas as faixas e curtidas de novo? As edições da prévia atual serão descartadas.")) return;
+    if (!window.confirm(t("app.confirmFullReanalysis"))) return;
     setCacheCleared(false);
     void analysis.fullReanalyze(again);
   }
@@ -156,7 +160,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                   <Image src={me.data.images[0].url} alt="" width={32} height={32} className="size-8 rounded-full" />
                 )}
                 <span className="hidden max-w-40 truncate text-sm sm:inline" title={me.data.email ?? undefined}>
-                  {me.data.display_name ?? "(sem nome)"}
+                  {me.data.display_name ?? t("common.noName")}
                 </span>
               </>
             )}
@@ -171,13 +175,13 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
         {/* desktop: fixed height under the header; only the playlist list scrolls, the analysis stays in view */}
         <aside
           className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-[calc(100dvh-11rem)]"
-          aria-label="Escolher e analisar"
+          aria-label={t("steps.choose")}
         >
           {!me.ok && <RawError error={me} />}
 
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="text-lg font-bold">
-              Suas playlists{" "}
+              {t("app.yourPlaylists")}{" "}
               {playlists?.ok && <span className="font-normal text-areia">{readable.length}</span>}
             </h2>
             <div className="flex gap-3 text-sm">
@@ -187,15 +191,15 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 title={block.reason}
                 onClick={() => refreshPlaylists(true)}
               >
-                {refreshing ? "Atualizando…" : "Atualizar"}
+                {refreshing ? t("app.refreshing") : t("app.refresh")}
               </button>
               <button
                 className="text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline"
                 disabled={busy}
                 onClick={clearCache}
-                title="Apaga faixas e gêneros guardados neste navegador"
+                title={t("app.clearCacheTitle")}
               >
-                {cacheCleared ? "Cache limpo" : "Limpar cache"}
+                {cacheCleared ? t("app.cacheCleared") : t("app.clearCache")}
               </button>
             </div>
           </div>
@@ -205,12 +209,12 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
           ) : !playlists.ok ? (
             <RawError error={playlists} />
           ) : !me.ok ? (
-            <p className="text-sm text-erro">Sem o ID do usuário (erro acima) não dá para filtrar as playlists.</p>
+            <p className="text-sm text-erro">{t("app.noUserId")}</p>
           ) : (
             <>
               {liked && !liked.ok && (
                 <div className="flex flex-col gap-1 text-sm">
-                  <p>Não foi possível ler as músicas curtidas. As outras playlists funcionam normalmente.</p>
+                  <p>{t("app.likedFailed")}</p>
                   <RawError error={liked} />
                 </div>
               )}
@@ -237,11 +241,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
             }}
           >
             {block.reason ??
-              (chosen.length === 0
-                ? "Escolha playlists para analisar"
-                : `Analisar ${chosen.length} ${chosen.length === 1 ? "playlist" : "playlists"}`)}
+              (chosen.length === 0 ? t("app.choosePlaylists") : t("app.analyze", { count: chosen.length }))}
           </button>
-          {active && <p className="-mt-3 text-sm text-areia">Cancele a análise atual para começar outra.</p>}
+          {active && <p className="-mt-3 text-sm text-areia">{t("app.cancelFirst")}</p>}
 
           {run && (
             <AnalysisPanel
@@ -259,7 +261,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
           )}
         </aside>
 
-        <section className="flex min-w-0 flex-col gap-6" aria-label="Revisar e criar">
+        <section className="flex min-w-0 flex-col gap-6" aria-label={t("steps.review")}>
           {run && tracks.length > 0 ? (
             <Preview
               key={run.id}
@@ -267,17 +269,14 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               duplicates={run.totalTracks - tracks.length}
               consensus={consensus}
               storageKey={previewStorageKey(run.id)}
-              createDisabledReason={block.reason ?? (busy ? "Aguarde a análise terminar" : undefined)}
+              createDisabledReason={block.reason ?? (busy ? t("app.waitAnalysis") : undefined)}
               onSpotifyChanged={onSpotifyChanged}
               reorderToken={reorderToken}
             />
           ) : active ? (
-            <SpectrumSkeleton text="Lendo as primeiras faixas. Os gêneros aparecem aqui conforme cada playlist termina." />
+            <SpectrumSkeleton text={t("app.readingFirst")} />
           ) : (
-            <SpectrumSkeleton
-              text="Escolha playlists ao lado e analise para ver suas músicas separadas por gênero."
-              still
-            />
+            <SpectrumSkeleton text={t("app.emptyHint")} still />
           )}
         </section>
       </div>
@@ -286,8 +285,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
 }
 
 function PickerSkeleton() {
+  const { t } = useI18n();
   return (
-    <div className="flex flex-col gap-3" aria-label="Carregando playlists">
+    <div className="flex flex-col gap-3" aria-label={t("app.loadingPlaylists")}>
       {[70, 55, 80, 45, 65, 50].map((w, i) => (
         <div key={i} className="flex items-center gap-3">
           <div className="skeleton size-6" />
@@ -318,6 +318,7 @@ function SpectrumSkeleton({ text, still }: { text: string; still?: boolean }) {
 }
 
 function AppSkeleton({ logout }: { logout: React.ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="flex w-full flex-1 flex-col self-stretch" aria-busy>
       <header className="border-b border-fio">
@@ -331,7 +332,7 @@ function AppSkeleton({ logout }: { logout: React.ReactNode }) {
       </header>
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-8 px-4 pt-6 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12">
         <PickerSkeleton />
-        <SpectrumSkeleton text="Carregando seu perfil…" />
+        <SpectrumSkeleton text={t("app.loadingProfile")} />
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.accessToken || session.error) {
     return Response.json(
-      { ok: false, url: "/api/lastfm", status: 401, raw: "Sessão expirada ou ausente. Entre novamente." },
+      { ok: false, url: "/api/lastfm", status: 401, code: "session-expired", raw: "Session expired or missing." },
       { status: 401 },
     );
   }
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   // Last.fm can't look anything up without an artist (Spotify returns "" for unavailable tracks)
   if (!artist) {
     console.warn("[lastfm] rejected: empty artist", JSON.stringify({ artist: params.get("artist"), track: params.get("track") }));
-    return Response.json({ ok: false, url: "/api/lastfm", status: 400, raw: "Artista vazio." }, { status: 400 });
+    return Response.json({ ok: false, url: "/api/lastfm", status: 400, code: "empty-artist", raw: "Empty artist." }, { status: 400 });
   }
 
   const result = track

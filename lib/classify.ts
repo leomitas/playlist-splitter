@@ -18,6 +18,7 @@ export type ClassifiedTrack = {
   family: string;
   // whitelisted tags that contributed, artist's first
   tags: string[];
+  // a reason code (LOW_INCOHERENT, LOW_CORRECTED + name); see lowConfidenceReason
   lowConfidence?: string;
   // set when the artist consensus (lib/artist-consensus.ts) gave the track its family:
   // the family and low-confidence reason it had before
@@ -33,6 +34,25 @@ export type ClassifiedTrack = {
 
 // Bump when classification rules change, so saved analyses can be flagged as outdated
 export const CLASSIFIER_VERSION = 3;
+
+// Low-confidence reasons are stable codes; the UI translates them
+export const LOW_INCOHERENT = "incoherent-tags";
+// followed by the artist name Last.fm corrected to
+export const LOW_CORRECTED = "corrected:";
+
+export type LowConfidenceReason =
+  | { kind: "incoherent" }
+  | { kind: "corrected"; artist: string }
+  | { kind: "other"; text: string };
+
+// Also reads the Portuguese texts saved by analyses made before the codes
+export function lowConfidenceReason(reason: string): LowConfidenceReason {
+  if (reason === LOW_INCOHERENT || reason === "tags fora do padrão da seleção") return { kind: "incoherent" };
+  if (reason.startsWith(LOW_CORRECTED)) return { kind: "corrected", artist: reason.slice(LOW_CORRECTED.length) };
+  const legacy = /^Last\.fm corrigiu o artista para "(.*)"$/.exec(reason);
+  if (legacy) return { kind: "corrected", artist: legacy[1] };
+  return { kind: "other", text: reason };
+}
 
 // Placeholder family for the bare "funk" tag inside the weights
 export const FUNK_SLOT = "\u0000funk";
@@ -124,7 +144,7 @@ export function classifyTrack(input: {
 
   const corrected = input.artistTags?.correctedArtist ?? input.trackTags?.correctedArtist;
   if (corrected && normalizeName(corrected) !== normalizeName(input.artist)) {
-    result.lowConfidence = `Last.fm corrigiu o artista para "${corrected}"`;
+    result.lowConfidence = `${LOW_CORRECTED}${corrected}`;
   }
   return result;
 }
@@ -191,7 +211,7 @@ export function markIncoherent(tracks: ClassifiedTrack[]) {
     for (const t of own) {
       if (t.lowConfidence) continue;
       if (!t.tags.some((tag) => words(tag).some((w) => topWords.has(w) || supported(w)))) {
-        t.lowConfidence = "tags fora do padrão da seleção";
+        t.lowConfidence = LOW_INCOHERENT;
       }
     }
   }

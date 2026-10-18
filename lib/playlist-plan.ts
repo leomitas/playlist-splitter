@@ -11,20 +11,25 @@ export type PlannedPlaylist = {
   ignored: number;
 };
 
-// Unedited groups (name still equals the family id) get the default suffix
-export function playlistName(group: Group) {
+// Unedited groups (name still equals the family id) get the family's display name (`label`,
+// translated by the UI) and the default suffix
+export function playlistName(group: Group, label: (familyId: string) => string = (id) => id) {
   const name = group.name.trim();
-  return name === group.id || name === "" ? `${group.id} (Playlist Splitter)` : name;
+  return name === group.id || name === "" ? `${label(group.id)} (Playlist Splitter)` : name;
 }
 
-export function planPlaylists(groups: Group[], tracks: Map<string, ClassifiedTrack>): PlannedPlaylist[] {
+export function planPlaylists(
+  groups: Group[],
+  tracks: Map<string, ClassifiedTrack>,
+  label?: (familyId: string) => string,
+): PlannedPlaylist[] {
   return groups
     .filter((g) => g.include && g.trackKeys.length > 0)
     .map((g) => {
       const uris = g.trackKeys
         .map((k) => tracks.get(k)?.uri)
         .filter((u): u is string => !!u && TRACK_URI.test(u));
-      return { groupId: g.id, name: playlistName(g), uris, ignored: g.trackKeys.length - uris.length };
+      return { groupId: g.id, name: playlistName(g, label), uris, ignored: g.trackKeys.length - uris.length };
     });
 }
 

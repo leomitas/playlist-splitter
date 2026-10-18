@@ -10,8 +10,9 @@ import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
 import { genreColor } from "./genre-colors";
+import { useI18n } from "./i18n";
 import { RateLimitNotice } from "./rate-limit-notice";
-import { ErrorHint } from "./raw-error";
+import { ErrorBody } from "./raw-error";
 import { loadCreatedUris, loadMe, loadPlaylists, rememberCreated, type CreatedPlaylist } from "./spotify-data";
 
 type Mode = "update" | "create";
@@ -107,11 +108,7 @@ async function findExisting(
 function RawError({ error }: { error: ApiError }) {
   return (
     <div className="mt-1 text-xs text-erro">
-      <p className="font-semibold">
-        {error.method ?? "POST"} {error.url} → {error.status ?? "sem resposta"}
-      </p>
-      <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{error.raw}</pre>
-      <ErrorHint error={error} />
+      <ErrorBody error={error} method="POST" className="max-h-40" />
     </div>
   );
 }
@@ -128,6 +125,8 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   disabledReason?: string;
   onDone: () => void;
 }) {
+  const i18n = useI18n();
+  const { t, n, rich, genre, list } = i18n;
   const [phase, setPhase] = useState<"idle" | "checking" | "confirm" | "running" | "done">("idle");
   const [plan, setPlan] = useState<PlannedPlaylist[]>([]);
   const [existing, setExisting] = useState<Record<string, ExistingMatch | null>>({});
@@ -155,8 +154,10 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   // what the action bar announces: playlists with at least one valid track, and their tracks
   const outline = useMemo(() => {
     const planned = planPlaylists(groups, tracks).filter((p) => p.uris.length > 0);
-    return { playlists: planned.length, tracks: planned.reduce((n, p) => n + p.uris.length, 0) };
+    return { playlists: planned.length, tracks: planned.reduce((sum, p) => sum + p.uris.length, 0) };
   }, [groups, tracks]);
+  // a group still named after its family shows (and gets created with) the translated name
+  const shownName = (groupId: string, name: string) => (name === groupId ? genre(groupId) : name);
 
   const update = (groupId: string, p: Partial<Progress>) =>
     setProgress((prev) => ({ ...prev, [groupId]: { ...prev[groupId], ...p } }));
@@ -182,9 +183,13 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   }
 
   async function openConfirm() {
-    const planned = planPlaylists(groups, tracks);
+    const planned = planPlaylists(groups, tracks, genre);
     setPlan(planned);
-    setWarnings(createWarnings(groups, tracks));
+    const w = createWarnings(groups, tracks);
+    setWarnings({
+      lowConfidence: w.lowConfidence.map((x) => ({ ...x, name: shownName(x.groupId, x.name) })),
+      uncertain: w.uncertain.map((x) => ({ ...x, name: shownName(x.groupId, x.name) })),
+    });
     setUncertainOk(false);
     setPhase("checking");
     setSheetOpen(true);
@@ -318,23 +323,24 @@ export const CreatePlaylists = memo(function CreatePlaylists({
     finish();
   }
 
-  const fmt = (n: number) => n.toLocaleString("pt-BR");
   const statusLabel = (pr: Progress) =>
     pr.status === "aguardando"
-      ? "Na fila"
+      ? t("create.status.waiting")
       : pr.status === "criando"
-        ? "Criando…"
+        ? t("create.status.creating")
         : pr.status === "adicionando"
-          ? `Adicionando ${fmt(pr.added)}/${fmt(pr.total)}`
+          ? t("create.status.adding", { added: pr.added, total: pr.total })
           : pr.status === "criada"
-            ? `Concluída · criada com ${fmt(pr.added)} faixas`
+            ? t("create.status.created", { count: pr.added })
             : pr.status === "atualizada"
-              ? `Concluída · atualizada (+${fmt(pr.added)} faixas)`
+              ? t("create.status.updated", { count: pr.added })
               : pr.status === "nada novo"
-                ? "Concluída · nada novo"
+                ? t("create.status.nothingNew")
                 : pr.status === "erro"
-                  ? `Erro${pr.added > 0 ? ` (${fmt(pr.added)} de ${fmt(pr.total)} faixas adicionadas)` : ""}`
-                  : "Não criada (sem faixas válidas)";
+                  ? pr.added > 0
+                    ? t("create.status.errorPartial", { added: pr.added, total: pr.total })
+                    : t("create.status.error")
+                  : t("create.status.notCreated");
   const STATUS_STYLE: Partial<Record<Progress["status"], string>> = {
     aguardando: "text-areia",
     criando: "text-papel",
@@ -354,11 +360,17 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   const failedCount = Object.values(progress).filter((pr) => pr.status === "erro").length;
   const head =
     phase === "done"
-      ? `Concluído: ${fmt(doneCount - failedCount)} de ${fmt(order.length)} playlists${failedCount ? ` · ${fmt(failedCount)} com erro` : ""}`
+      ? [
+          t("create.head.done", { done: doneCount - failedCount, total: order.length }),
+          failedCount > 0 && t("create.head.failed", { count: failedCount }),
+        ]
+          .filter(Boolean)
+          .join(" ")
       : [
-          `Playlist ${fmt(Math.min(current + 1, order.length))} de ${fmt(order.length)}`,
-          currentProgress?.status === "adicionando" && `lote ${currentProgress.batch}/${currentProgress.totalBatches}`,
-          calls.etaMs !== null && formatEta(calls.etaMs),
+          t("create.head.playlist", { n: Math.min(current + 1, order.length), total: order.length }),
+          currentProgress?.status === "adicionando" &&
+            t("create.head.batch", { batch: currentProgress.batch ?? 0, total: currentProgress.totalBatches ?? 0 }),
+          calls.etaMs !== null && formatEta(i18n, calls.etaMs),
         ]
           .filter(Boolean)
           .join(" · ");
@@ -376,10 +388,10 @@ export const CreatePlaylists = memo(function CreatePlaylists({
           <>
             <p className="text-sm text-areia" aria-live="polite">
               {disabledReason
-                ? "Os gêneros ainda podem mudar enquanto playlists são analisadas."
+                ? t("footer.analyzing")
                 : outline.playlists === 0
-                  ? "Marque pelo menos um gênero para criar a playlist dele."
-                  : "Você confere tudo antes de qualquer mudança no Spotify."}
+                  ? t("footer.noneMarked")
+                  : t("footer.review")}
             </p>
             <button
               className={`w-full sm:w-auto ${primary}`}
@@ -388,8 +400,8 @@ export const CreatePlaylists = memo(function CreatePlaylists({
             >
               {disabledReason ??
                 (outline.playlists === 0
-                  ? "Nenhum gênero marcado"
-                  : `Criar ${outline.playlists} ${outline.playlists === 1 ? "playlist" : "playlists"} · ${fmt(outline.tracks)} faixas`)}
+                  ? t("footer.noGenre")
+                  : t("footer.create", { count: outline.playlists, tracks: t("common.tracks", { count: outline.tracks }) }))}
             </button>
           </>
         ) : (
@@ -399,7 +411,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
               <ProgressBar percent={percent} />
             </div>
             <button className={ghost} onClick={() => setSheetOpen(true)}>
-              {phase === "done" ? "Ver resumo" : "Ver detalhes"}
+              {phase === "done" ? t("footer.summary") : t("footer.details")}
             </button>
           </>
         )}
@@ -412,14 +424,14 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   const willCreate = plan.filter((p) => p.uris.length > 0).length;
   const title =
     phase === "checking"
-      ? "Conferindo o Spotify"
+      ? t("create.title.checking")
       : phase === "confirm"
-        ? `Criar ${willCreate} ${willCreate === 1 ? "playlist" : "playlists"}`
+        ? t("create.title.confirm", { count: willCreate })
         : phase === "running"
-          ? "Criando playlists"
+          ? t("create.title.running")
           : failedCount > 0
-            ? "Concluído com erros"
-            : "Playlists prontas";
+            ? t("create.title.doneErrors")
+            : t("create.title.done");
 
   return (
     <>
@@ -443,18 +455,14 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                 {title}
               </h2>
               <p className="text-sm text-areia">
-                {phase === "checking"
-                  ? "Procurando playlists que o Playlist Splitter já criou, para atualizar em vez de duplicar."
-                  : phase === "confirm"
-                    ? "Nada muda no Spotify antes de você confirmar."
-                    : head}
+                {phase === "checking" ? t("create.sub.checking") : phase === "confirm" ? t("create.sub.confirm") : head}
               </p>
             </div>
             {phase !== "checking" && (
               <button
                 className="grid size-9 flex-none place-items-center rounded-full text-areia transition-colors hover:bg-grafite-2 hover:text-papel"
                 onClick={closeSheet}
-                aria-label={phase === "confirm" ? "Cancelar" : "Esconder detalhes"}
+                aria-label={phase === "confirm" ? t("common.cancel") : t("create.hide")}
               >
                 <svg aria-hidden viewBox="0 0 16 16" className="size-4">
                   <path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
@@ -489,30 +497,34 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                       onChange={(e) => setUncertainOk(e.target.checked)}
                     />
                     <span>
-                      <span className="font-bold text-alerta">
-                        {warnings.uncertain.map((w) => w.name).join(" e ")}{" "}
-                        {warnings.uncertain.length === 1 ? "está marcado" : "estão marcados"}.
-                      </span>{" "}
-                      Esses grupos juntam faixas sem gênero definido. Marque para confirmar que quer criá-los mesmo assim.
+                      {rich(
+                        "create.uncertain",
+                        { count: warnings.uncertain.length, names: list(warnings.uncertain.map((w) => w.name)) },
+                        { b: (c) => <span className="font-bold text-alerta">{c}</span> },
+                      )}
                     </span>
                   </label>
                 )}
                 {warnings.lowConfidence.length > 0 && (
                   <div className="rounded-lg border border-alerta/40 bg-alerta/5 p-3 text-sm" role="note">
-                    <p className="font-bold text-alerta">Muitas faixas de baixa confiança</p>
+                    <p className="font-bold text-alerta">{t("create.lowTitle")}</p>
                     <ul className="mt-1 text-areia">
                       {warnings.lowConfidence.map((w) => (
                         <li key={w.groupId}>
-                          <span className="text-papel">{w.name}</span>: {Math.round(w.share * 100)}% com baixa confiança
+                          {rich(
+                            "create.lowItem",
+                            { name: w.name, percent: Math.round(w.share * 100) },
+                            { name: (c) => <span className="text-papel">{c}</span> },
+                          )}
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-1 text-xs text-areia">Dá para criar assim; se quiser, revise antes em &quot;Revisar baixa confiança&quot;.</p>
+                    <p className="mt-1 text-xs text-areia">{t("create.lowHint")}</p>
                   </div>
                 )}
                 {checkError && (
                   <div className="rounded-lg border border-erro/40 bg-erro/10 p-3 text-sm">
-                    <p>Não foi possível verificar playlists existentes; todas serão criadas como novas.</p>
+                    <p>{t("create.checkError")}</p>
                     <RawError error={checkError} />
                   </div>
                 )}
@@ -532,17 +544,17 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                           <p className="min-w-0 truncate font-bold">{p.name}</p>
                           <p className="flex-none text-sm text-areia">
                             <span className="num mr-1 text-2xl" style={{ color }}>
-                              {fmt(p.uris.length)}
+                              {n(p.uris.length)}
                             </span>
-                            faixas
+                            {t("create.tracksUnit", { count: p.uris.length })}
                           </p>
                         </div>
                         {p.ignored > 0 && (
-                          <p className="text-xs text-areia">{fmt(p.ignored)} ignoradas: sem URI válida</p>
+                          <p className="text-xs text-areia">{t("create.ignored", { count: p.ignored })}</p>
                         )}
                         {match ? (
                           <fieldset className="flex flex-col gap-2">
-                            <legend className="sr-only">O que fazer com {p.name}</legend>
+                            <legend className="sr-only">{t("create.whatToDo", { name: p.name })}</legend>
                             <div className="flex flex-wrap gap-2 text-sm">
                               <ModeOption
                                 name={p.groupId}
@@ -550,31 +562,33 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                                 onChange={() => setMode("update")}
                                 label={
                                   match.newUris.length > 0
-                                    ? `Atualizar existente (+${fmt(match.newUris.length)} novas)`
-                                    : "Atualizar existente (nada novo)"
+                                    ? t("create.updateExisting", { count: match.newUris.length })
+                                    : t("create.updateNothing")
                                 }
                               />
                               <ModeOption
                                 name={p.groupId}
                                 checked={mode === "create"}
                                 onChange={() => setMode("create")}
-                                label={`Criar nova (${isPublic ? "pública" : "privada"})`}
+                                label={t("create.createNew", { visibility: t(isPublic ? "create.public" : "create.private") })}
                               />
                             </div>
                             <p className="text-xs text-areia">
-                              Já existe uma playlist com esse nome.{" "}
+                              {t("create.exists")}{" "}
                               <a className="text-papel underline underline-offset-2" href={match.url} target="_blank" rel="noreferrer">
-                                Ver no Spotify
+                                {t("create.viewOnSpotify")}
                               </a>
                               {match.matches > 1 && (
-                                <span className="text-alerta"> {match.matches} com esse nome; usando a primeira.</span>
+                                <span className="text-alerta"> {t("create.manyMatches", { count: match.matches })}</span>
                               )}
                             </p>
                           </fieldset>
                         ) : p.uris.length === 0 ? (
-                          <p className="text-xs text-erro">Não será criada (sem faixas válidas)</p>
+                          <p className="text-xs text-erro">{t("create.willNotCreate")}</p>
                         ) : (
-                          <p className="text-xs text-areia">Nova playlist {isPublic ? "pública" : "privada"}</p>
+                          <p className="text-xs text-areia">
+                            {t("create.newPlaylist", { visibility: t(isPublic ? "create.public" : "create.private") })}
+                          </p>
                         )}
                       </li>
                     );
@@ -588,13 +602,13 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                 <div className="flex flex-col gap-2">
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="flex items-baseline gap-1.5">
-                      <span className="num text-5xl">{fmt(phase === "done" ? doneCount - failedCount : Math.min(current + 1, order.length))}</span>
+                      <span className="num text-5xl">{n(phase === "done" ? doneCount - failedCount : Math.min(current + 1, order.length))}</span>
                       <span className="text-areia">
-                        de {fmt(order.length)} {phase === "done" ? "concluídas" : "playlists"}
+                        {t(phase === "done" ? "create.ofDone" : "create.ofPlaylists", { total: order.length })}
                       </span>
                     </p>
                     {phase === "running" && calls.etaMs !== null && (
-                      <p className="text-sm text-areia">{formatEta(calls.etaMs)}</p>
+                      <p className="text-sm text-areia">{formatEta(i18n, calls.etaMs)}</p>
                     )}
                   </div>
                   <ProgressBar percent={percent} />
@@ -629,12 +643,12 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                         )}
                         {phase === "done" && (
                           <p className="ml-5.5 text-xs text-areia">
-                            {fmt(pr.added)} adicionadas · {fmt(p.ignored)} ignoradas
+                            {t("create.addedIgnored", { added: pr.added, ignored: p.ignored })}
                             {pr.url && (
                               <>
                                 {" · "}
                                 <a className="text-papel underline underline-offset-2" href={pr.url} target="_blank" rel="noreferrer">
-                                  Abrir no Spotify
+                                  {t("create.open")}
                                 </a>
                               </>
                             )}
@@ -650,7 +664,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                                 title={disabledReason}
                                 onClick={() => retry(id)}
                               >
-                                Tentar de novo
+                                {t("create.retry")}
                               </button>
                             )}
                           </div>
@@ -668,30 +682,30 @@ export const CreatePlaylists = memo(function CreatePlaylists({
               <label className="flex cursor-pointer items-center gap-3 text-sm">
                 <input type="checkbox" className="check" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
                 <span>
-                  Tornar públicas as playlists novas
-                  <span className="block text-xs text-areia">Padrão: privadas. As existentes não mudam.</span>
+                  {t("create.makePublic")}
+                  <span className="block text-xs text-areia">{t("create.publicHint")}</span>
                 </span>
               </label>
               <div className="flex w-full gap-2 sm:w-auto">
                 <button className={ghost} onClick={closeSheet}>
-                  Cancelar
+                  {t("common.cancel")}
                 </button>
                 <button
                   className={`flex-1 sm:flex-none ${primary}`}
                   disabled={!!disabledReason || (warnings.uncertain.length > 0 && !uncertainOk)}
-                  title={warnings.uncertain.length > 0 && !uncertainOk ? "Confirme os grupos sem gênero definido acima" : undefined}
+                  title={warnings.uncertain.length > 0 && !uncertainOk ? t("create.confirmUncertainTitle") : undefined}
                   onClick={run}
                 >
-                  {disabledReason ?? "Confirmar e criar"}
+                  {disabledReason ?? t("create.confirm")}
                 </button>
               </div>
             </footer>
           )}
           {phase === "done" && (
             <footer className="flex flex-none flex-wrap items-center justify-between gap-3 border-t border-fio px-5 py-4 sm:px-6">
-              <p className="text-xs text-areia">Para rodar de novo, recarregue a página.</p>
+              <p className="text-xs text-areia">{t("create.reload")}</p>
               <button className={ghost} onClick={closeSheet}>
-                Fechar
+                {t("common.close")}
               </button>
             </footer>
           )}
@@ -702,11 +716,12 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 });
 
 function ProgressBar({ percent }: { percent: number }) {
+  const { t } = useI18n();
   return (
     <div
       className="h-1.5 w-full overflow-hidden rounded-full bg-cafe"
       role="progressbar"
-      aria-label="Progresso da criação"
+      aria-label={t("create.progress")}
       aria-valuenow={Math.round(percent)}
     >
       <div className="h-full rounded-full bg-papel transition-[width] duration-300" style={{ width: `${percent}%` }} />
