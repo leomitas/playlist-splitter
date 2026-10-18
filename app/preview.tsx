@@ -28,6 +28,7 @@ import {
   type PreviewState,
 } from "@/lib/preview-state";
 import { CreatePlaylists } from "./create-playlists";
+import { shownOn, useDragSelect } from "./use-drag-select";
 import { genreColor } from "./genre-colors";
 
 const noopSubscribe = () => () => {};
@@ -180,6 +181,14 @@ function PreviewEditor({
     return { groups: on.length, tracks: on.reduce((n, g) => n + g.trackKeys.length, 0) };
   }, [deferredGroups]);
 
+  // checked state without the deferral, for controls that must answer on the click itself
+  const includeNow = useMemo(() => new Map(state.groups.map((g) => [g.id, g.include])), [state.groups]);
+  // Shift ranges and drags (spectrum, cards) end here
+  const applyInclude = useCallback((groupIds: string[], on: boolean) => {
+    setUndo(null);
+    dispatch({ type: "setInclude", groupIds, on });
+  }, []);
+
   const onlyThis = useCallback((groupId: string) => {
     const groups = latest.current.groups;
     setUndo({
@@ -205,7 +214,7 @@ function PreviewEditor({
   return (
     <div className="flex flex-col gap-8">
       <section aria-label="Composição da biblioteca" className="flex flex-col gap-5">
-        <Spectrum bands={spectrum.bands} total={spectrum.total} />
+        <Spectrum bands={spectrum.bands} total={spectrum.total} include={includeNow} onApply={applyInclude} />
         <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:flex sm:flex-wrap sm:gap-x-12">
           <Stat value={tracks.length} label="faixas únicas" />
           <Stat value={spectrum.genres} label={spectrum.genres === 1 ? "gênero" : "gêneros"} />
@@ -378,45 +387,82 @@ const fmt = (n: number) => n.toLocaleString("pt-BR");
 
 // One band per group, as wide as its share. The 5 largest carry their name (and get a minimum
 // width so it fits); hovering any band shows its name and count.
-const Spectrum = memo(function Spectrum({ bands, total }: { bands: Band[]; total: number }) {
-  // hovered band and its center in px; the tooltip sits below it (above, it would slide under the sticky header)
+const Spectrum = memo(function Spectrum({
+  bands,
+  total,
+  include,
+  onApply,
+}: {
+  bands: Band[];
+  total: number;
+  // checked state right now (bands come from deferred groups and lag a frame)
+  include: Map<string, boolean>;
+  onApply: (ids: string[], on: boolean) => void;
+}) {
+  // hovered/focused band and its center in px; the tooltip sits below it (above, it would slide under the sticky header)
   const [hover, setHover] = useState<{ id: string; x: number } | null>(null);
   const labeled = useMemo(
     () => new Set([...bands].sort((a, b) => b.count - a.count).slice(0, LABELED).map((b) => b.id)),
     [bands],
   );
+  const ids = useMemo(() => bands.map((b) => b.id), [bands]);
+  const isOn = (id: string) => include.get(id) ?? false;
+  const select = useDragSelect({ ids, isOn, apply: onApply });
   const shown = bands.find((b) => b.id === hover?.id);
+  const point = (e: { currentTarget: HTMLElement }, id: string) =>
+    setHover({ id, x: e.currentTarget.offsetLeft + e.currentTarget.offsetWidth / 2 });
 
   return (
     <div className="relative">
       <div
-        className="split-in flex h-16 gap-0.5 overflow-hidden rounded-lg sm:h-20"
-        role="img"
-        aria-label={bands.map((b) => `${b.name}: ${fmt(b.count)} faixas`).join(", ")}
+        className={`split-in flex h-16 gap-0.5 overflow-hidden rounded-lg sm:h-20 ${select.preview ? "select-none" : ""}`}
+        role="group"
+        aria-label="Espectro de gêneros: cada faixa marca ou desmarca o gênero"
         onMouseLeave={() => setHover(null)}
       >
-        {bands.map((b) => (
-          <div
-            key={b.id}
-            onMouseEnter={(e) => setHover({ id: b.id, x: e.currentTarget.offsetLeft + e.currentTarget.offsetWidth / 2 })}
-            className={`flex min-w-1 flex-col justify-end overflow-hidden px-2 pb-1.5 text-cafe transition-opacity duration-150 ${
-              labeled.has(b.id) ? "min-w-12 sm:min-w-20" : ""
-            }`}
-            style={{
-              flexGrow: b.count,
-              flexBasis: 0,
-              background: genreColor(b.id),
-              opacity: b.include ? 1 : hover?.id === b.id ? 0.6 : 0.35,
-            }}
-          >
-            {labeled.has(b.id) && (
-              <>
-                <span className="num truncate text-lg sm:text-2xl">{fmt(b.count)}</span>
-                <span className="truncate text-xs font-bold sm:text-sm">{b.name}</span>
-              </>
-            )}
-          </div>
-        ))}
+        {bands.map((b) => {
+          const on = shownOn(select.preview, b.id, isOn(b.id));
+          const color = genreColor(b.id);
+          const percent = Math.round((b.count / Math.max(1, total)) * 100);
+          return (
+            <div
+              key={b.id}
+              role="button"
+              tabIndex={0}
+              aria-pressed={on}
+              aria-label={`${b.name}: ${fmt(b.count)} ${b.count === 1 ? "faixa" : "faixas"}, ${percent}%, ${on ? "marcado" : "desmarcado"}`}
+              data-drag-id={b.id}
+              onPointerDown={(e) => select.onPointerDown(b.id, e)}
+              onClick={(e) => select.onTap(b.id, e)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                select.onKeyToggle(b.id, e.key === " " && e.shiftKey);
+              }}
+              onMouseEnter={(e) => point(e, b.id)}
+              onFocus={(e) => point(e, b.id)}
+              onBlur={() => setHover(null)}
+              className={`flex min-w-3 cursor-pointer flex-col justify-end overflow-hidden px-2 pb-1.5 transition-colors duration-150 focus-visible:outline-offset-[-3px] ${
+                labeled.has(b.id) ? "min-w-12 sm:min-w-20" : ""
+              } ${on ? "text-cafe" : "text-papel"}`}
+              style={{
+                flexGrow: b.count,
+                flexBasis: 0,
+                // unchecked: dimmed background, light text that stays readable
+                background: on
+                  ? color
+                  : `color-mix(in oklch, ${color} ${hover?.id === b.id ? 45 : 28}%, var(--color-cafe))`,
+              }}
+            >
+              {labeled.has(b.id) && (
+                <>
+                  <span className="num truncate text-lg sm:text-2xl">{fmt(b.count)}</span>
+                  <span className="truncate text-xs font-bold sm:text-sm">{b.name}</span>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
       {shown && (
         <div
@@ -427,8 +473,8 @@ const Spectrum = memo(function Spectrum({ bands, total }: { bands: Band[]; total
           <span className="size-2.5 flex-none self-center rounded-full" style={{ background: genreColor(shown.id) }} />
           <span className="font-bold">{shown.name}</span>
           <span className="text-areia">
-            {fmt(shown.count)} {shown.count === 1 ? "faixa" : "faixas"} · {Math.round((shown.count / Math.max(1, total)) * 100)}%
-            {!shown.include && " · desmarcado"}
+            {fmt(shown.count)} {shown.count === 1 ? "faixa" : "faixas"} · {Math.round((shown.count / Math.max(1, total)) * 100)}% ·{" "}
+            {shownOn(select.preview, shown.id, isOn(shown.id)) ? "marcado" : "desmarcado"}
           </span>
         </div>
       )}

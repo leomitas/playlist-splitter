@@ -5,8 +5,10 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
   },
+  esbuild: { jsx: "automatic" },
   test: {
-    include: ["tests/**/*.test.ts"],
+    // component tests (.tsx) opt into jsdom with a `@vitest-environment jsdom` comment
+    include: ["tests/**/*.test.{ts,tsx}"],
     environment: "node",
   },
 });
