@@ -10,6 +10,7 @@ import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
 import { genreColor } from "./genre-colors";
 import { RateLimitNotice } from "./rate-limit-notice";
+import { ErrorHint } from "./raw-error";
 import { loadCreatedUris, loadMe, loadPlaylists, rememberCreated, type CreatedPlaylist } from "./spotify-data";
 
 type Mode = "update" | "create";
@@ -109,6 +110,7 @@ function RawError({ error }: { error: ApiError }) {
         {error.method ?? "POST"} {error.url} → {error.status ?? "sem resposta"}
       </p>
       <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{error.raw}</pre>
+      <ErrorHint error={error} />
     </div>
   );
 }

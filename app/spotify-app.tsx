@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { applyArtistConsensus } from "@/lib/artist-consensus";
 import { markIncoherent } from "@/lib/classify";
 import { isSplitterPlaylist } from "@/lib/playlist-plan";
@@ -137,6 +138,9 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 </span>
               </>
             )}
+            <Link href="/setup" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
+              Ajuda
+            </Link>
             {logout}
           </div>
         </div>

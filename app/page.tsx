@@ -1,8 +1,11 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { auth, signIn, signOut } from "@/auth";
+import { matchAuthError, setupHref } from "@/lib/known-errors";
 import { genreColor } from "./genre-colors";
+import { LocalhostWarning } from "./setup/setup-client";
 import { SpotifyApp } from "./spotify-app";
 import { Steps } from "./steps";
 
@@ -46,7 +49,12 @@ const SAMPLE: [genre: string, share: number][] = [
 function Welcome({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-10 px-4 py-12 sm:px-6">
-      <Steps current={1} />
+      <div className="flex items-center justify-between gap-4">
+        <Steps current={1} />
+        <Link href="/setup" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
+          Ajuda
+        </Link>
+      </div>
       <div className="flex flex-col gap-5">
         <h1 className="wide text-5xl leading-[0.95] sm:text-7xl">Playlist Splitter</h1>
         <p className="max-w-[44ch] text-lg text-areia sm:text-xl">
@@ -93,12 +101,22 @@ async function Content({ searchParams }: { searchParams: PageProps<"/">["searchP
   const { error } = await searchParams;
 
   if (!session?.accessToken) {
+    const known = error ? matchAuthError(String(error)) : null;
     return (
       <Welcome>
+        <LocalhostWarning />
         {error && (
           <ErrorBox>
             Falha no login (Auth.js): <strong>{String(error)}</strong>. Veja o terminal do
             servidor para detalhes.
+            {known && (
+              <span className="mt-1.5 block text-papel">
+                <strong>Causa provável, {known.title}:</strong> {known.fix}{" "}
+                <Link href={setupHref(known)} className="underline underline-offset-2">
+                  Ver em Configuração
+                </Link>
+              </span>
+            )}
           </ErrorBox>
         )}
         <LoginButton />
