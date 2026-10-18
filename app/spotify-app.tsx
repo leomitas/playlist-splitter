@@ -91,22 +91,18 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
       readable.map((p) => ({
         id: p.id,
         name: liked?.ok && p.id === LIKED_ID ? `${p.name} (${liked.data.total.toLocaleString("pt-BR")})` : p.name,
+        snapshotId: p.snapshot_id,
       })),
     [readable, liked],
+  );
+  // status and snapshot per playlist in the current run, for the picker's quick filters
+  const analysisInfo = useMemo(
+    () => new Map(run?.items.map((i) => [i.id, { status: i.status, snapshotId: i.snapshotId }])),
+    [run?.items],
   );
   // drop selections that disappeared after "Atualizar lista"
   const chosen = useMemo(() => readable.filter((p) => selected.has(p.id)), [readable, selected]);
 
-  const toggleSelected = useCallback(
-    (id: string) =>
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (!next.delete(id)) next.add(id);
-        return next;
-      }),
-    [],
-  );
-  const setAllSelected = useCallback((ids: string[]) => setSelected(new Set(ids)), []);
   // writes patched the session's playlist list, so this reads it back without a new listing
   const onSpotifyChanged = useCallback(() => refreshPlaylists(false), [refreshPlaylists]);
 
@@ -222,8 +218,8 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 disabled={busy}
                 status={statusById}
                 reprocessDisabledReason={block.reason}
-                onToggle={toggleSelected}
-                onSetAll={setAllSelected}
+                analysis={analysisInfo}
+                onSelect={setSelected}
                 onReprocess={analysis.reprocess}
               />
             </>
