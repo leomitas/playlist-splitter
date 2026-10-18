@@ -113,10 +113,10 @@ describe("applying countries", () => {
     expect([...artistsNeedingCountry(library()).values()]).toEqual(["MC Brasil", "Gringo Band", "Sumido"]);
   });
 
-  it("BR -> Funk BR, US -> R&B/Soul, not found -> Funk (incerto), not looked up yet -> unchanged", () => {
+  it("BR -> Funk BR, US -> Funk Internacional, not found -> Funk (incerto), not looked up yet -> unchanged", () => {
     const ts = library();
     applyCountries(ts, { [countryKey("MC Brasil")]: "BR", [countryKey("Gringo Band")]: "US", [countryKey("Sumido")]: null });
-    expect(ts.map((t) => t.family)).toEqual([FUNK_BR, "R&B/Soul", FUNK_UNCERTAIN, FUNK_BR]);
+    expect(ts.map((t) => t.family)).toEqual([FUNK_BR, "Funk Internacional", FUNK_UNCERTAIN, FUNK_BR]);
     expect(ts.every((t) => t.baseFamily !== undefined)).toBe(true);
   });
 

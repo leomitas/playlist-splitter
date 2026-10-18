@@ -19,6 +19,7 @@ describe("Funk BR family", () => {
     }
     expect(TAG_TO_FAMILY.has("funk")).toBe(false);
     expect(Object.keys(GENRE_FAMILIES)).not.toContain("Funk");
+    expect(TAG_TO_FAMILY.get("p-funk")).toBe("Funk Internacional");
   });
 
   it("a specific Brazilian tag puts the track in Funk BR, with no country needed", () => {
@@ -43,22 +44,26 @@ describe("bare 'funk' tag and the artist's country", () => {
     expect(resolveFamily(classify("MC Y", tags(["funk", 100])), "BR")).toBe(FUNK_BR);
   });
 
-  it("only 'funk' + country US -> R&B/Soul (funk gringo)", () => {
-    expect(resolveFamily(classify("Someone", tags(["funk", 100])), "US")).toBe("R&B/Soul");
+  it("only 'funk' + country US -> Funk Internacional", () => {
+    expect(resolveFamily(classify("Someone", tags(["funk", 100])), "US")).toBe("Funk Internacional");
+  });
+
+  it("soul/R&B weighing more than funk -> R&B/Soul", () => {
+    expect(resolveFamily(classify("Soul Singer", tags(["soul", 100], ["rnb", 60], ["funk", 80])), "US")).toBe("R&B/Soul");
   });
 
   it("not found on MusicBrainz (country null) stays Funk (incerto)", () => {
     expect(resolveFamily(classify("Unknown", tags(["funk", 100])), null)).toBe(FUNK_UNCERTAIN);
   });
 
-  it("Prince (funk, soul, disco, pop, rock) from the US -> R&B/Soul", () => {
+  it("Prince (funk, soul, disco, pop, rock) from the US -> Funk Internacional", () => {
     const prince = classify("Prince", tags(["funk", 100], ["soul", 60], ["disco", 50], ["pop", 50], ["rock", 40]));
     expect(prince.family).toBe(FUNK_UNCERTAIN);
-    expect(resolveFamily(prince, "US")).toBe("R&B/Soul");
+    expect(resolveFamily(prince, "US")).toBe("Funk Internacional");
   });
 
-  it("Takanaka (funk, jazz) from Japan -> R&B/Soul, or Jazz when jazz dominates", () => {
-    expect(resolveFamily(classify("Masayoshi Takanaka", tags(["funk", 100], ["jazz", 80])), "JP")).toBe("R&B/Soul");
+  it("Takanaka (funk, jazz) from Japan -> Funk Internacional, or Jazz when jazz dominates", () => {
+    expect(resolveFamily(classify("Masayoshi Takanaka", tags(["funk", 100], ["jazz", 80])), "JP")).toBe("Funk Internacional");
     expect(resolveFamily(classify("Masayoshi Takanaka", tags(["jazz", 150], ["funk", 60])), "JP")).toBe("Jazz");
   });
 

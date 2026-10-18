@@ -16,7 +16,7 @@ Split the songs of your Spotify playlists (and liked songs) by genre and create 
 
 - **Genre spectrum** of the selected playlists and liked songs, grouped into families (Rock, MPB, Funk BR, Hip-hop/Rap, Eletrônica…).
 - **Review before creating:** rename, merge and include/exclude groups; search, filter and move tracks in bulk; a single list of every low-confidence track; export the classification as JSON.
-- **Brazilian vs. American funk:** Brazilian funk tags go to **Funk BR**; for artists tagged only "funk", the artist's country (MusicBrainz) decides between Funk BR and R&B/Soul, and unknown ones wait in **Funk (incerto)** for review.
+- **Brazilian vs. American funk:** Brazilian funk tags go to **Funk BR**; for artists tagged only "funk", the artist's country (MusicBrainz) decides between **Funk BR** and **Funk Internacional**, and unknown ones wait in **Funk (incerto)** for review.
 - **Duplicates removed** by Spotify id and by identical artist + title (versions such as Remix, Slowed or Ao Vivo stay).
 - **Artist consensus:** when an artist's confident tracks agree on a family, their unclassified or low-confidence tracks follow (never overriding confident tracks or your manual moves).
 - **Quota-friendly:** everything read is cached in the browser (IndexedDB); "Sincronizar curtidas" reads only new likes; existing app playlists are updated instead of duplicated and only re-read when their snapshot changed.
@@ -32,7 +32,7 @@ Next.js 16 (App Router, Turbopack, Cache Components) · React 19 · TypeScript �
 
 Spotify removed the `genres` field and the batch endpoints (e.g. several artists per request) for apps in **Development Mode**, which is the mode every self-hosted copy of this app runs in. Genres therefore come from **Last.fm tags** of the artist (and of the track, when the artist's tags aren't enough), mapped to families by a simple whitelist in [`lib/genre-families.ts`](lib/genre-families.ts).
 
-The bare tag **"funk"** is ambiguous (funk carioca and American funk share it), so for artists with no Brazilian funk tag the app asks **MusicBrainz** for the artist's country: Brazil → Funk BR, another country → R&B/Soul (or Jazz when jazz weighs more), not found → Funk (incerto). A country is used only for a confident, exact match (score ≥ 90, same normalized name or alias). MusicBrainz allows **1 request per second**, so these lookups run in the background at that pace (with pause and time left) and are cached in the browser; "not found" is asked again after 14 days.
+The bare tag **"funk"** is ambiguous (funk carioca and American funk share it), so for artists with no Brazilian funk tag the app asks **MusicBrainz** for the artist's country: Brazil → Funk BR, another country → Funk Internacional (still competing with the other tags: R&B/Soul when soul/R&B weighs more, Jazz when jazz does), not found → Funk (incerto). A country is used only for a confident, exact match (score ≥ 90, same normalized name or alias). MusicBrainz allows **1 request per second**, so these lookups run in the background at that pace (with pause and time left) and are cached in the browser; "not found" is asked again after 14 days.
 
 ## Spotify limits you should know
 

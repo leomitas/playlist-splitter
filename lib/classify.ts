@@ -32,7 +32,7 @@ export type ClassifiedTrack = {
 };
 
 // Bump when classification rules change, so saved analyses can be flagged as outdated
-export const CLASSIFIER_VERSION = 2;
+export const CLASSIFIER_VERSION = 3;
 
 // Placeholder family for the bare "funk" tag inside the weights
 export const FUNK_SLOT = "\u0000funk";

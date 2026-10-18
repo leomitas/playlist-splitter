@@ -6,6 +6,7 @@ import { OTHER } from "@/lib/genre-families";
 const HUES: Record<string, [hue: number, chroma: number]> = {
   Punk: [5, 0.15],
   "Funk BR": [25, 0.14],
+  "Funk Internacional": [15, 0.11],
   // muted: a group waiting for review
   "Funk (incerto)": [25, 0.05],
   Rock: [45, 0.14],

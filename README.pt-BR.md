@@ -16,7 +16,7 @@ Separa as músicas das suas playlists do Spotify (e das curtidas) por gênero e 
 
 - **Espectro de gêneros** das playlists escolhidas e das curtidas, agrupado em famílias (Rock, MPB, Funk BR, Hip-hop/Rap, Eletrônica…).
 - **Revisão antes de criar:** renomear, juntar e marcar/desmarcar grupos; buscar, filtrar e mover faixas em lote; lista única de todas as faixas de baixa confiança; exportar a classificação em JSON.
-- **Funk brasileiro x funk gringo:** tags de funk brasileiro vão para **Funk BR**; para artistas só com a tag "funk", o país do artista (MusicBrainz) decide entre Funk BR e R&B/Soul, e os de país desconhecido ficam em **Funk (incerto)** para revisão.
+- **Funk brasileiro x funk gringo:** tags de funk brasileiro vão para **Funk BR**; para artistas só com a tag "funk", o país do artista (MusicBrainz) decide entre **Funk BR** e **Funk Internacional**, e os de país desconhecido ficam em **Funk (incerto)** para revisão.
 - **Duplicatas removidas** por ID do Spotify e por artista + título idênticos (versões como Remix, Slowed ou Ao Vivo continuam).
 - **Consenso por artista:** quando as faixas confiáveis de um artista concordam numa família, as faixas dele sem família ou de baixa confiança vão junto (sem sobrescrever faixas confiáveis nem o que você moveu à mão).
 - **Econômico com a cota:** tudo que é lido fica em cache no navegador (IndexedDB); "Sincronizar curtidas" lê só as curtidas novas; playlists já criadas pelo app são atualizadas em vez de duplicadas e só são relidas quando o snapshot mudou.
@@ -32,7 +32,7 @@ Next.js 16 (App Router, Turbopack, Cache Components) · React 19 · TypeScript �
 
 O Spotify removeu o campo `genres` e os endpoints em lote (vários artistas por requisição) para apps em **Development Mode**, que é o modo de toda cópia deste app rodando localmente. Por isso os gêneros vêm das **tags do Last.fm** do artista (e da faixa, quando as do artista não bastam), mapeadas para famílias por uma lista simples em [`lib/genre-families.ts`](lib/genre-families.ts).
 
-A tag genérica **"funk"** é ambígua (funk carioca e funk americano usam a mesma), então, para artistas sem tag de funk brasileiro, o app pergunta ao **MusicBrainz** o país do artista: Brasil → Funk BR, outro país → R&B/Soul (ou Jazz quando o jazz pesa mais), não encontrado → Funk (incerto). O país só vale num resultado confiável e exato (score ≥ 90, mesmo nome ou alias normalizado). O MusicBrainz permite **1 requisição por segundo**, então essas consultas rodam em segundo plano nesse ritmo (com pausa e tempo restante) e ficam em cache no navegador; "não encontrado" é consultado de novo depois de 14 dias.
+A tag genérica **"funk"** é ambígua (funk carioca e funk americano usam a mesma), então, para artistas sem tag de funk brasileiro, o app pergunta ao **MusicBrainz** o país do artista: Brasil → Funk BR, outro país → Funk Internacional (ainda competindo com as outras tags: R&B/Soul quando soul/R&B pesa mais, Jazz quando o jazz pesa), não encontrado → Funk (incerto). O país só vale num resultado confiável e exato (score ≥ 90, mesmo nome ou alias normalizado). O MusicBrainz permite **1 requisição por segundo**, então essas consultas rodam em segundo plano nesse ritmo (com pausa e tempo restante) e ficam em cache no navegador; "não encontrado" é consultado de novo depois de 14 dias.
 
 ## Limites do Spotify
 

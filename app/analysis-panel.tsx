@@ -178,8 +178,8 @@ export function AnalysisPanel({
 
       {!active && (run.rulesVersion ?? 1) < CLASSIFIER_VERSION && (
         <p className="rounded-lg border border-alerta/50 bg-alerta/10 p-2.5 text-xs">
-          <span className="font-bold text-alerta">As regras de gênero mudaram desde esta análise</span> (Funk BR e funk
-          gringo). Analise as mesmas playlists de novo para aplicar: as tags vêm do cache do Last.fm e as
+          <span className="font-bold text-alerta">As regras de gênero mudaram desde esta análise</span> (Funk BR e Funk
+          Internacional). Analise as mesmas playlists de novo para aplicar: as tags vêm do cache do Last.fm e as
           faixas só são lidas de novo no Spotify se a playlist mudou.
         </p>
       )}
@@ -302,7 +302,7 @@ function CountryProgress({ state, artists }: { state: CountryState; artists: Map
       </div>
       <p className="text-areia">
         Decide a tag genérica &quot;funk&quot; de {fmt(artists.size)} {artists.size === 1 ? "artista" : "artistas"}: Brasil vai
-        para Funk BR, outro país para R&amp;B/Soul. Uma consulta por segundo.
+        para Funk BR, outro país para Funk Internacional. Uma consulta por segundo.
       </p>
       {running && (
         <>

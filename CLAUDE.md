@@ -81,10 +81,10 @@ scripts/                     setup-env.mjs, doctor.mjs
 ### Classificação
 
 - Pipeline na tela (useMemo em `spotify-app.tsx`): país do artista → coerência → consenso. `baseFamily` guarda a família só das tags; a prévia reposiciona faixas cuja família mudou (país ou consenso), nunca as movidas à mão.
-- **Funk:** tags brasileiras → "Funk BR". A tag genérica `funk` não tem família: com tag brasileira soma em Funk BR; sem ela, o país (MusicBrainz) decide: BR → Funk BR, outro → R&B/Soul (competindo com as outras tags, então jazz pesado vai para Jazz), desconhecido → "Funk (incerto)". "Funk (incerto)" e "Outros" não votam no consenso e podem receber família dele.
+- **Funk:** tags brasileiras → "Funk BR". A tag genérica `funk` não tem família: com tag brasileira soma em Funk BR; sem ela, o país (MusicBrainz) decide: BR → Funk BR, outro → "Funk Internacional" (competindo por peso com as outras tags: soul/R&B pesado vai para R&B/Soul, jazz pesado para Jazz), desconhecido → "Funk (incerto)". "Funk (incerto)" e "Outros" não votam no consenso e podem receber família dele.
 - **MusicBrainz:** só para artistas com `funk` genérico e sem tag brasileira. País só com score >= 90 e nome ou alias idêntico após normalizar (normalização que preserva qualquer escrita; a `normalizeName` antiga zera nomes em japonês). Máx. 1 req/s (fila no navegador a 1,1 s + espaçamento no servidor). Cache `mb:<nome>` no IndexedDB; "não achei" expira em 14 dias.
 - **Coerência ("tags fora do padrão da seleção"):** uma palavra de tag é aceita se estiver no top 15 dos outros artistas **ou** for usada por >= 3 outros artistas (antes, gêneros minoritários inteiros, como funk, eram marcados).
-- `CLASSIFIER_VERSION` (hoje 2) fica na análise salva; análises antigas mostram aviso para analisar de novo.
+- `CLASSIFIER_VERSION` (hoje 3) fica na análise salva; análises antigas mostram aviso para analisar de novo.
 - Duplicatas: mesmo ID do Spotify ou mesmo primeiro artista + título normalizados (Remix, Slowed, Ao Vivo continuam distintos).
 - Consenso por artista: votos só de faixas confiáveis (com família e sem baixa confiança); família com >= 2 votos e >= 65% vai para as faixas do artista sem família ou de baixa confiança. Nunca muda faixa confiável. Faixas movidas à mão (`PreviewState.manual`) nunca são reposicionadas.
 - Agrupamento por ID do artista; caches antigos sem ID usam o nome normalizado (homônimos com IDs diferentes não emprestam ID).

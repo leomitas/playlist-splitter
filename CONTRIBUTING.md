@@ -61,7 +61,7 @@ Important decisions are documented in `CLAUDE.md` (for example why the auth rout
 1. Check the tag on Last.fm (artist page > tags) and which artists carry it.
 2. Add it in lowercase to the right family in [`lib/genre-families.ts`](lib/genre-families.ts). The file's header explains the rules: one family per tag, no mood/era tags.
 3. New family? Add the key there and, optionally, a color in `app/genre-colors.ts`.
-   - Funk is special: Brazilian funk tags belong to **Funk BR**, while the bare tag `funk` is never mapped (it's shared by funk carioca and American funk). Its family comes from the artist's country, looked up on MusicBrainz (`lib/musicbrainz.ts`, `lib/country.ts`; 1 request per second, cached). Add Brazilian variations to Funk BR; don't map `funk` itself.
+   - Funk is special: Brazilian funk tags belong to **Funk BR**, while the bare tag `funk` is never mapped (it's shared by funk carioca and American funk). Its family comes from the artist's country, looked up on MusicBrainz (Brazil → Funk BR, elsewhere → **Funk Internacional**, unknown → Funk (incerto)) (`lib/musicbrainz.ts`, `lib/country.ts`; 1 request per second, cached). Add Brazilian variations to Funk BR; don't map `funk` itself.
 4. Run `npm test`: `tests/classify.test.ts` checks that every tag is lowercase and in a single family. Add a case if your mapping fixes a real misclassification.
 5. In the PR, list a few example artists and where they ended up before ("Outros") and after.
 

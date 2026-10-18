@@ -49,8 +49,12 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
   ],
   "R&B/Soul": [
     "rnb", "r&b", "r and b", "soul", "neo-soul", "neo soul", "contemporary r&b", "alternative rnb",
-    "alternative r&b", "motown", "funk soul", "gospel", "p-funk",
+    "alternative r&b", "motown", "funk soul", "gospel",
   ],
+  // American and other non-Brazilian funk (Prince, Earth, Wind & Fire, Parliament). Few tags
+  // map here directly: most of it comes from the bare "funk" tag of an artist whose country
+  // isn't Brazil (see GENERIC_FUNK below).
+  "Funk Internacional": ["p-funk"],
   "Eletrônica": [
     "electronic", "electronica", "edm", "house", "deep house", "tech house", "techno", "trance",
     "dubstep", "drum and bass", "dnb", "electro", "electro house", "progressive house",
@@ -87,12 +91,13 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
 
 // The bare "funk" tag has no family of its own; where it goes depends on the artist:
 // - the track also has a Funk BR tag, or the artist is from Brazil (MusicBrainz) -> Funk BR
-// - the artist is from another country -> GRINGO_FUNK (it then competes with the other tags,
-//   so a jazz-heavy artist still ends up in Jazz)
+// - the artist is from another country -> GRINGO_FUNK ("Funk Internacional"); it still competes
+//   by weight with the other tags, so soul/R&B-heavy artists go to R&B/Soul and jazz-heavy
+//   ones to Jazz
 // - country unknown -> FUNK_UNCERTAIN, shown as its own group for review
 export const GENERIC_FUNK = "funk";
 export const FUNK_BR = "Funk BR";
-export const GRINGO_FUNK = "R&B/Soul";
+export const GRINGO_FUNK = "Funk Internacional";
 export const FUNK_UNCERTAIN = "Funk (incerto)";
 
 // Families that mean "not decided": they don't vote in the artist consensus and can receive
