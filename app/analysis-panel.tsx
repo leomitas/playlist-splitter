@@ -1,5 +1,6 @@
 "use client";
 
+import { CLASSIFIER_VERSION } from "@/lib/classify";
 import { lastfm } from "@/lib/lastfm-client";
 import { LIKED_ID } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
@@ -165,6 +166,14 @@ export function AnalysisPanel({
             Cancelar
           </button>
         </div>
+      )}
+
+      {!active && (run.rulesVersion ?? 1) < CLASSIFIER_VERSION && (
+        <p className="rounded-lg border border-alerta/50 bg-alerta/10 p-2.5 text-xs">
+          <span className="font-bold text-alerta">As regras de gênero mudaram desde esta análise</span> (Funk BR e funk
+          gringo). Analise as mesmas playlists de novo para aplicar: as tags vêm do cache do Last.fm e as
+          faixas só são lidas de novo no Spotify se a playlist mudou.
+        </p>
       )}
 
       {liked && !active && (

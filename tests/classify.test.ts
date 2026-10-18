@@ -22,7 +22,7 @@ describe("tag -> family map", () => {
   });
 
   it("maps known tags", () => {
-    expect(TAG_TO_FAMILY.get("funk carioca")).toBe("Funk");
+    expect(TAG_TO_FAMILY.get("funk carioca")).toBe("Funk BR");
     expect(TAG_TO_FAMILY.get("bossa nova")).toBe("MPB");
     expect(TAG_TO_FAMILY.get("chill")).toBeUndefined();
   });

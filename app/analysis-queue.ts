@@ -2,7 +2,7 @@
 // state persisted in IndexedDB so a reload resumes (paused) where it stopped.
 // Read-only: only GETs to Spotify and Last.fm.
 
-import { classifyTrack, hasFamilyTag, type ClassifiedTrack } from "@/lib/classify";
+import { classifyTrack, CLASSIFIER_VERSION, hasFamilyTag, type ClassifiedTrack } from "@/lib/classify";
 import { idbClear, idbGet, idbSet } from "@/lib/idb";
 import { readNewSince, trackIdentity } from "@/lib/incremental-sync";
 import { getArtistTags, getTrackTags } from "@/lib/lastfm-client";
@@ -59,6 +59,8 @@ export type Run = {
   current?: { step: "faixas" | "gêneros"; done: number; total: number | null };
   // last "Sincronizar curtidas"
   sync?: LikedSync;
+  // CLASSIFIER_VERSION the tracks were classified with (missing = before versions existed)
+  rulesVersion?: number;
 };
 
 export type LikedSync =
@@ -283,6 +285,7 @@ export const analysis = {
       })),
       tracks: [],
       totalTracks: 0,
+      rulesVersion: CLASSIFIER_VERSION,
     });
     if (previous) {
       try {

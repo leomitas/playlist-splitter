@@ -35,9 +35,12 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
     "drill", "uk drill",
   ],
   Trap: ["trap", "trap brasileiro", "trap latino", "latin trap", "emo rap", "cloud rap", "rage"],
-  Funk: [
-    "funk", "funk carioca", "baile funk", "funk brasileiro", "brazilian funk", "funk ostentacao",
-    "funk ostentação", "funk paulista", "funk mandelao", "funk mandelão", "p-funk",
+  // Brazilian funk only. The bare tag "funk" is deliberately NOT here: it's used both for
+  // funk carioca and for American funk (Prince, Earth, Wind & Fire); see GENERIC_FUNK below.
+  "Funk BR": [
+    "brazilian funk", "funk carioca", "baile funk", "funk brasileiro", "funk paulista",
+    "funk mandelao", "funk mandelão", "funk ostentacao", "funk ostentação", "funk melody",
+    "funk consciente", "automotivo", "funk automotivo",
   ],
   "Pagode/Samba": ["pagode", "samba", "samba-enredo", "samba enredo", "partido alto", "samba rock"],
   Sertanejo: [
@@ -46,7 +49,7 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
   ],
   "R&B/Soul": [
     "rnb", "r&b", "r and b", "soul", "neo-soul", "neo soul", "contemporary r&b", "alternative rnb",
-    "alternative r&b", "motown", "funk soul", "gospel",
+    "alternative r&b", "motown", "funk soul", "gospel", "p-funk",
   ],
   "Eletrônica": [
     "electronic", "electronica", "edm", "house", "deep house", "tech house", "techno", "trance",
@@ -81,6 +84,20 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
   ],
   Phonk: ["phonk", "drift phonk", "brazilian phonk", "memphis rap", "memphis phonk"],
 };
+
+// The bare "funk" tag has no family of its own; where it goes depends on the artist:
+// - the track also has a Funk BR tag, or the artist is from Brazil (MusicBrainz) -> Funk BR
+// - the artist is from another country -> GRINGO_FUNK (it then competes with the other tags,
+//   so a jazz-heavy artist still ends up in Jazz)
+// - country unknown -> FUNK_UNCERTAIN, shown as its own group for review
+export const GENERIC_FUNK = "funk";
+export const FUNK_BR = "Funk BR";
+export const GRINGO_FUNK = "R&B/Soul";
+export const FUNK_UNCERTAIN = "Funk (incerto)";
+
+// Families that mean "not decided": they don't vote in the artist consensus and can receive
+// a family from it, like "Outros"
+export const UNCERTAIN_FAMILIES = new Set([OTHER, FUNK_UNCERTAIN]);
 
 // Reverse index: tag -> family
 export const TAG_TO_FAMILY = new Map<string, string>(

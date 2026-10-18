@@ -1,4 +1,4 @@
-import { OTHER, TAG_TO_FAMILY } from "@/lib/genre-families";
+import { FUNK_BR, FUNK_UNCERTAIN, GENERIC_FUNK, GRINGO_FUNK, OTHER, TAG_TO_FAMILY } from "@/lib/genre-families";
 import type { Lookup } from "@/lib/lastfm";
 
 const MIN_COUNT = 20;
@@ -22,7 +22,48 @@ export type ClassifiedTrack = {
   // set when the artist consensus (lib/artist-consensus.ts) gave the track its family:
   // the family and low-confidence reason it had before
   inferredFrom?: { family: string; lowConfidence?: string };
+  // set when the bare "funk" tag counted and no Funk BR tag did: the family weights in order
+  // of appearance (FUNK_SLOT stands for "funk"), so the family can be decided again once the
+  // artist's country is known (resolveFamily)
+  genericFunk?: { weights: [string, number][] };
+  // family from the tags alone, before country and consensus adjustments (set by the app's
+  // pipeline; the preview uses it to notice tracks whose family changed)
+  baseFamily?: string;
 };
+
+// Bump when classification rules change, so saved analyses can be flagged as outdated
+export const CLASSIFIER_VERSION = 2;
+
+// Placeholder family for the bare "funk" tag inside the weights
+export const FUNK_SLOT = "\u0000funk";
+
+// Where the bare "funk" tag goes, given the artist's country (null = unknown)
+export const funkTarget = (country: string | null) =>
+  country === "BR" ? FUNK_BR : country ? GRINGO_FUNK : FUNK_UNCERTAIN;
+
+// Heaviest family; FUNK_SLOT counts toward `slotTarget`. Ties go to the first to appear.
+function pickFamily(weights: [string, number][], slotTarget: string) {
+  const merged = new Map<string, number>();
+  for (const [f, w] of weights) {
+    const family = f === FUNK_SLOT ? slotTarget : f;
+    merged.set(family, (merged.get(family) ?? 0) + w);
+  }
+  let family = OTHER;
+  let best = 0;
+  for (const [f, w] of merged) {
+    if (w > best) {
+      best = w;
+      family = f;
+    }
+  }
+  return family;
+}
+
+// Family of a track once its artist's country is known; tracks without a bare "funk" decision
+// keep the family they have
+export function resolveFamily(t: Pick<ClassifiedTrack, "family" | "genericFunk">, country: string | null) {
+  return t.genericFunk ? pickFamily(t.genericFunk.weights, funkTarget(country)) : t.family;
+}
 
 export function normalizeName(s: string) {
   return s
@@ -55,7 +96,7 @@ export function classifyTrack(input: {
 
   const add = (lookup: Lookup | null, factor: number) => {
     for (const t of lookup?.tags ?? []) {
-      const family = TAG_TO_FAMILY.get(t.name);
+      const family = TAG_TO_FAMILY.get(t.name) ?? (t.name === GENERIC_FUNK ? FUNK_SLOT : undefined);
       if (!family || t.count < MIN_COUNT) continue;
       weights.set(family, (weights.get(family) ?? 0) + t.count * factor);
       if (!order.includes(family)) order.push(family);
@@ -65,15 +106,10 @@ export function classifyTrack(input: {
   add(input.artistTags, 1);
   add(input.trackTags, TRACK_WEIGHT);
 
-  let family = OTHER;
-  let best = 0;
-  for (const f of order) {
-    const w = weights.get(f)!;
-    if (w > best) {
-      best = w;
-      family = f;
-    }
-  }
+  const ordered = order.map((f) => [f, weights.get(f)!] as [string, number]);
+  // a Funk BR tag settles what the bare "funk" means; otherwise it waits for the country
+  const brTag = weights.has(FUNK_BR);
+  const genericFunk = weights.has(FUNK_SLOT) && !brTag ? { weights: ordered } : undefined;
 
   const result: ClassifiedTrack = {
     key: input.key,
@@ -81,8 +117,9 @@ export function classifyTrack(input: {
     name: input.name,
     artist: input.artist,
     ...(input.artistId && { artistId: input.artistId }),
-    family,
+    family: pickFamily(ordered, brTag ? FUNK_BR : FUNK_UNCERTAIN),
     tags,
+    ...(genericFunk && { genericFunk }),
   };
 
   const corrected = input.artistTags?.correctedArtist ?? input.trackTags?.correctedArtist;

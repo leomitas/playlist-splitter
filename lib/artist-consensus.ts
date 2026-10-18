@@ -4,7 +4,7 @@
 // (lib/preview-state.ts), which never reassigns a track the user moved.
 
 import { normalizeName, type ClassifiedTrack } from "@/lib/classify";
-import { OTHER } from "@/lib/genre-families";
+import { OTHER, UNCERTAIN_FAMILIES } from "@/lib/genre-families";
 
 export const MIN_VOTES = 2;
 export const MIN_SHARE = 0.65;
@@ -17,8 +17,8 @@ export type ConsensusStats = {
   noLongerLow: number;
 };
 
-const isConfident = (t: ClassifiedTrack) => t.family !== OTHER && !t.lowConfidence;
-const isCandidate = (t: ClassifiedTrack) => t.family === OTHER || !!t.lowConfidence;
+const isConfident = (t: ClassifiedTrack) => !UNCERTAIN_FAMILIES.has(t.family) && !t.lowConfidence;
+const isCandidate = (t: ClassifiedTrack) => UNCERTAIN_FAMILIES.has(t.family) || !!t.lowConfidence;
 
 // Spotify artist id when known; tracks cached before ids were stored borrow the id of a
 // same-named track, so both land on the same artist. A name shared by two ids (homonyms)
