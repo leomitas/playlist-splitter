@@ -93,10 +93,14 @@ export function classifyTrack(input: {
 }
 
 const COHERENCE_TOP = 15;
+// A word used by this many other artists is part of the selection's vocabulary even when it
+// isn't in the top tags (a minority genre such as funk in a rock-heavy library)
+const MIN_SUPPORTING_ARTISTS = 3;
 const words = (tag: string) => tag.split(/[\s-]+/).filter(Boolean);
 
-// Flags tracks whose tags share no word with the top tags of the other artists in the
-// selection (word-level, so "indie pop" matches "indie rock"); likely a homonym
+// Flags tracks whose tags share no word with the other artists of the selection: neither with
+// their top tags nor with words that at least MIN_SUPPORTING_ARTISTS of them use (word-level,
+// so "indie pop" matches "indie rock"); likely a homonym
 export function markIncoherent(tracks: ClassifiedTrack[]) {
   const classified = tracks.filter((t) => t.family !== OTHER);
   if (classified.length < MIN_CLASSIFIED_FOR_COHERENCE) return;
@@ -108,12 +112,19 @@ export function markIncoherent(tracks: ClassifiedTrack[]) {
   // first position for the first two distinct artists using each tag
   const firsts = new Map<string, { artist: string; pos: number }[]>();
   const byArtist = new Map<string, { counts: Map<string, number>; tracks: ClassifiedTrack[] }>();
+  // word -> distinct artists using it
+  const wordArtists = new Map<string, Set<string>>();
   classified.forEach((t, pos) => {
     const a = normalizeName(t.artist);
     let entry = byArtist.get(a);
     if (!entry) byArtist.set(a, (entry = { counts: new Map(), tracks: [] }));
     entry.tracks.push(t);
     t.tags.forEach((tag, i) => {
+      for (const w of words(tag)) {
+        let users = wordArtists.get(w);
+        if (!users) wordArtists.set(w, (users = new Set()));
+        users.add(a);
+      }
       total.set(tag, (total.get(tag) ?? 0) + 1);
       entry.counts.set(tag, (entry.counts.get(tag) ?? 0) + 1);
       const f = firsts.get(tag) ?? [];
@@ -136,9 +147,13 @@ export function markIncoherent(tracks: ClassifiedTrack[]) {
         .slice(0, COHERENCE_TOP)
         .flatMap((o) => words(o.tag)),
     );
+    const supported = (w: string) => {
+      const users = wordArtists.get(w);
+      return !!users && users.size - (users.has(artist) ? 1 : 0) >= MIN_SUPPORTING_ARTISTS;
+    };
     for (const t of own) {
       if (t.lowConfidence) continue;
-      if (!t.tags.some((tag) => words(tag).some((w) => topWords.has(w)))) {
+      if (!t.tags.some((tag) => words(tag).some((w) => topWords.has(w) || supported(w)))) {
         t.lowConfidence = "tags fora do padrão da seleção";
       }
     }

@@ -82,4 +82,35 @@ describe("markIncoherent", () => {
     expect(tracks.at(-1)!.lowConfidence).toBe("tags fora do padrão da seleção");
     expect(tracks[0].lowConfidence).toBeUndefined();
   });
+
+  // the real case: a funk minority below the library's top 15 tags was flagged entirely
+  const mainstream = () =>
+    [
+      ["rock", "alternative rock"], ["pop", "dance pop"], ["indie", "indie rock"], ["mpb", "bossa nova"],
+      ["hip-hop", "rap"], ["electronic", "house"], ["metal", "heavy metal"], ["soul", "rnb"],
+      ["punk", "pop punk"], ["folk", "americana"], ["jazz", "bebop"], ["trap", "cloud rap"],
+      ["synthpop", "electropop"], ["grunge", "post-grunge"], ["techno", "trance"], ["samba", "pagode"],
+    ].flatMap((tags, i) =>
+      Array.from({ length: 20 }, (_, j) => ({
+        ...classify({ tags: tags.map((name) => ({ name, count: 100 })) }, null, `A${i}-${j % 4}`),
+        key: `m${i}-${j}`,
+      })),
+    );
+
+  it("doesn't flag a minority genre shared by several artists (funk only tags)", () => {
+    const funk = Array.from({ length: 8 }, (_, i) => ({ ...classify(tags(["funk", 100], ["funk carioca", 80]), null, `MC ${i % 4}`), key: `f${i}` }));
+    const tracks = [...mainstream(), ...funk];
+    markIncoherent(tracks);
+    expect(funk.filter((t) => t.lowConfidence)).toHaveLength(0);
+  });
+
+  it("still flags a tag only one other artist uses", () => {
+    const pair = [
+      { ...classify(tags(["riot grrrl", 100]), null, "Solo 1"), key: "p1" },
+      { ...classify(tags(["riot grrrl", 100]), null, "Solo 2"), key: "p2" },
+    ];
+    const tracks = [...mainstream(), ...pair];
+    markIncoherent(tracks);
+    expect(pair.every((t) => t.lowConfidence === "tags fora do padrão da seleção")).toBe(true);
+  });
 });
