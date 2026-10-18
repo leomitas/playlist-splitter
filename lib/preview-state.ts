@@ -22,10 +22,19 @@ export type PreviewState = {
   // consensus or the artist's country); the name predates the country rule and is kept for
   // saved states
   inferredPlaced: Record<string, string>;
+  // the user changed which groups are checked; groups that appear later then start unchecked
+  includeEdited?: boolean;
 };
 
 export type Action =
   | { type: "toggleInclude"; groupId: string }
+  // bulk checkbox actions; "all" = every group
+  | { type: "setInclude"; groupIds: string[] | "all"; on: boolean }
+  | { type: "invertInclude"; groupIds: string[] }
+  | { type: "includeRecommended" }
+  | { type: "onlyThis"; groupId: string }
+  // puts back a previous set of checked groups (undo of "Só este")
+  | { type: "restoreInclude"; include: Record<string, boolean> }
   | { type: "rename"; groupId: string; name: string }
   | { type: "move"; trackKey: string; toGroupId: string }
   | { type: "moveMany"; trackKeys: string[]; toGroupId: string }
@@ -73,9 +82,8 @@ export function initialState(tracks: ClassifiedTrack[]): PreviewState {
     .map(([family, keys]) => ({ id: family, name: family, include: false, trackKeys: keys }));
   // always present so any track can be moved there
   groups.push({ id: OTHER, name: OTHER, include: false, trackKeys: other });
-  // only the largest group starts selected; "Outros" and "Funk (incerto)" never do
-  const first = groups.find((g) => g.trackKeys.length > 0 && !UNCERTAIN_FAMILIES.has(g.id));
-  if (first) first.include = true;
+  // the recommended groups start checked: every genre except "Outros" and "Funk (incerto)"
+  for (const g of groups) g.include = isRecommended(g);
   return { groups, autoMoved, aliases: {}, manual: {}, inferredPlaced: inferredOf(tracks) };
 }
 
@@ -87,6 +95,8 @@ export function upgradeSaved(saved: Partial<PreviewState> & Pick<PreviewState, "
     autoMoved: saved.autoMoved ?? {},
     aliases: saved.aliases ?? {},
     manual: saved.manual ?? {},
+    // saved states from before the flag: their choices count as the user's
+    includeEdited: saved.includeEdited ?? true,
     inferredPlaced: saved.inferredPlaced ?? inferredOf(tracks),
   };
 }
@@ -134,6 +144,8 @@ function addTracks(state: PreviewState, tracks: ClassifiedTrack[]): PreviewState
     for (const g of groups) g.trackKeys = g.trackKeys.filter((k) => !moved.has(k));
     for (const k of waiting) delete autoMoved[k];
     const group = { id: t.family, name: t.family, include: false, trackKeys: [...waiting, t.key] };
+    // a genre that shows up later follows the default unless the user already chose by hand
+    group.include = !state.includeEdited && isRecommended(group);
     // new groups go before "Outros", which stays last
     const otherIndex = groups.findIndex((g) => g.id === OTHER);
     groups.splice(otherIndex === -1 ? groups.length : otherIndex, 0, group);
@@ -198,13 +210,44 @@ export function customGroupId(name: string, groups: Group[]) {
   return id;
 }
 
+// Groups checked by default and by "Marcar recomendados"
+export const isRecommended = (g: Pick<Group, "id">) => !UNCERTAIN_FAMILIES.has(g.id);
+
+// Sets include per group; untouched groups keep their identity (memoized cards)
+function withInclude(state: PreviewState, next: (g: Group) => boolean): PreviewState {
+  let changed = false;
+  const groups = state.groups.map((g) => {
+    const include = next(g);
+    if (include === g.include) return g;
+    changed = true;
+    return { ...g, include };
+  });
+  return changed || !state.includeEdited ? { ...state, groups, includeEdited: true } : state;
+}
+
 export function reducer(state: PreviewState, action: Action): PreviewState {
   switch (action.type) {
     case "toggleInclude":
-      return {
-        ...state,
-        groups: state.groups.map((g) => (g.id === action.groupId ? { ...g, include: !g.include } : g)),
-      };
+      return withInclude(state, (g) => (g.id === action.groupId ? !g.include : g.include));
+
+    case "setInclude": {
+      const ids = action.groupIds === "all" ? null : new Set(action.groupIds);
+      return withInclude(state, (g) => (!ids || ids.has(g.id) ? action.on : g.include));
+    }
+
+    case "invertInclude": {
+      const ids = new Set(action.groupIds);
+      return withInclude(state, (g) => (ids.has(g.id) ? !g.include : g.include));
+    }
+
+    case "includeRecommended":
+      return withInclude(state, isRecommended);
+
+    case "onlyThis":
+      return withInclude(state, (g) => g.id === action.groupId);
+
+    case "restoreInclude":
+      return withInclude(state, (g) => action.include[g.id] ?? g.include);
 
     case "rename":
       return {

@@ -16,7 +16,7 @@ import {
 import type { ConsensusStats } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { buildExport } from "@/lib/export";
-import { OTHER } from "@/lib/genre-families";
+import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
 import { loadSortBy, orderGroups, saveSortBy, SORT_LABELS, sortGroupIds, type SortBy } from "@/lib/group-order";
 import {
   initialState,
@@ -35,6 +35,8 @@ const noopSubscribe = () => () => {};
 const PAGE = 100;
 const SAVE_DELAY_MS = 500;
 const NO_FAMILIES: string[] = [];
+const toolLink =
+  "text-areia underline-offset-4 transition-colors hover:text-papel hover:underline disabled:opacity-40 disabled:hover:no-underline";
 
 type GroupOption = { id: string; name: string };
 
@@ -119,6 +121,22 @@ function PreviewEditor({
   if (sorted.trigger !== sortTrigger) setSorted({ trigger: sortTrigger, order: sortGroupIds(state.groups, sortBy, lowOf) });
   const orderedGroups = useMemo(() => orderGroups(state.groups, sorted.order), [state.groups, sorted.order]);
 
+  // genre search filters the cards (and what "Inverter" acts on)
+  const [genreQuery, setGenreQuery] = useState("");
+  const deferredGenreQuery = useDeferredValue(genreQuery);
+  const visibleGroups = useMemo(() => {
+    const q = fold(deferredGenreQuery);
+    return q ? orderedGroups.filter((g) => fold(g.name).includes(q)) : orderedGroups;
+  }, [orderedGroups, deferredGenreQuery]);
+  // "Expandir/Recolher todos": every card follows when n changes
+  const [expand, setExpand] = useState({ open: false, n: 0 });
+  // undo for "Só este": the checked state before it
+  const [undo, setUndo] = useState<{ name: string; include: Record<string, boolean> } | null>(null);
+  const include = (action: Action) => {
+    setUndo(null);
+    dispatch(action);
+  };
+
   // New playlists finished, or the artist consensus changed some families: slot the tracks in
   // without touching the user's edits (tracks moved by hand are never re-placed)
   useEffect(() => {
@@ -156,6 +174,20 @@ function PreviewEditor({
 
   // summary, spectrum and the create plan lag a frame behind, so checkboxes respond first
   const deferredGroups = useDeferredValue(state.groups);
+  // what the footer will create: checked groups and their tracks
+  const marked = useMemo(() => {
+    const on = deferredGroups.filter((g) => g.include);
+    return { groups: on.length, tracks: on.reduce((n, g) => n + g.trackKeys.length, 0) };
+  }, [deferredGroups]);
+
+  const onlyThis = useCallback((groupId: string) => {
+    const groups = latest.current.groups;
+    setUndo({
+      name: groups.find((g) => g.id === groupId)?.name ?? groupId,
+      include: Object.fromEntries(groups.map((g) => [g.id, g.include])),
+    });
+    dispatch({ type: "onlyThis", groupId });
+  }, []);
   const spectrum = useMemo(() => {
     const total = deferredGroups.reduce((n, g) => n + g.trackKeys.length, 0);
     // largest first, "Funk (incerto)" and "Outros" last: the cards' default order
@@ -194,10 +226,7 @@ function PreviewEditor({
       <section aria-labelledby="genres-title" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <h2 id="genres-title" className="text-lg font-bold">
-            Gêneros{" "}
-            <span className="font-normal text-areia">
-              {deferredGroups.filter((g) => g.include).length} de {deferredGroups.length} marcados
-            </span>
+            Gêneros
           </h2>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <label className="flex items-center gap-2 text-sm text-areia">
@@ -242,11 +271,76 @@ function PreviewEditor({
           </div>
         </div>
 
+        <div className="flex flex-col gap-2 rounded-xl border border-fio bg-grafite/60 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="font-bold" aria-live="polite">
+              {fmt(marked.groups)} de {fmt(deferredGroups.length)} marcados{" "}
+              <span className="font-normal text-areia">· {fmt(marked.tracks)} faixas</span>
+            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <button className={toolLink} onClick={() => include({ type: "setInclude", groupIds: "all", on: true })}>
+                Marcar todos
+              </button>
+              <button className={toolLink} onClick={() => include({ type: "setInclude", groupIds: "all", on: false })}>
+                Limpar
+              </button>
+              <button
+                className={toolLink}
+                disabled={visibleGroups.length === 0}
+                onClick={() => include({ type: "invertInclude", groupIds: visibleGroups.map((g) => g.id) })}
+                title={genreQuery ? "Inverte só os gêneros que aparecem na busca" : undefined}
+              >
+                Inverter
+              </button>
+              <button
+                className={toolLink}
+                onClick={() => include({ type: "includeRecommended" })}
+                title={`Todos, exceto ${OTHER} e ${FUNK_UNCERTAIN}`}
+              >
+                Marcar recomendados
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <input
+              type="search"
+              className="min-w-0 flex-1 rounded-md border border-fio bg-cafe px-2 py-1 sm:max-w-64"
+              placeholder="Buscar gênero"
+              value={genreQuery}
+              onChange={(e) => setGenreQuery(e.target.value)}
+              aria-label="Buscar gênero pelo nome"
+            />
+            <button className={toolLink} onClick={() => setExpand((x) => ({ open: true, n: x.n + 1 }))}>
+              Expandir todos
+            </button>
+            <button className={toolLink} onClick={() => setExpand((x) => ({ open: false, n: x.n + 1 }))}>
+              Recolher todos
+            </button>
+          </div>
+          {undo && (
+            <p className="text-areia" role="status">
+              Só <span className="font-bold text-papel">{undo.name}</span> ficou marcado.{" "}
+              <button
+                className="text-papel underline underline-offset-4"
+                onClick={() => {
+                  dispatch({ type: "restoreInclude", include: undo.include });
+                  setUndo(null);
+                }}
+              >
+                Desfazer
+              </button>
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-col gap-2">
-          {orderedGroups.map((g) => (
+          {visibleGroups.length === 0 && <p className="text-sm text-areia">Nenhum gênero com esse nome.</p>}
+          {visibleGroups.map((g) => (
             <GroupCard
               key={g.id}
               group={g}
+              expand={expand}
+              onOnly={onlyThis}
               maxCount={maxCount}
               groupOptions={groupOptions}
               byKey={byKey}
@@ -355,6 +449,8 @@ function Stat({ value, label }: { value: number; label: string }) {
 // only while the group is open, PAGE at a time.
 const GroupCard = memo(function GroupCard({
   group: g,
+  expand,
+  onOnly,
   maxCount,
   groupOptions,
   byKey,
@@ -363,6 +459,9 @@ const GroupCard = memo(function GroupCard({
   dispatch,
 }: {
   group: Group;
+  // "Expandir/Recolher todos": applied when n changes
+  expand: { open: boolean; n: number };
+  onOnly: (groupId: string) => void;
   maxCount: number;
   groupOptions: GroupOption[];
   byKey: Map<string, ClassifiedTrack>;
@@ -370,7 +469,12 @@ const GroupCard = memo(function GroupCard({
   autoMovedFamilies: string[];
   dispatch: Dispatch<Action>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(expand.open);
+  const [expandSeen, setExpandSeen] = useState(expand.n);
+  if (expandSeen !== expand.n) {
+    setExpandSeen(expand.n);
+    setOpen(expand.open);
+  }
   // the chevron turns on the click itself; the rows render right after that frame
   const showRows = useDeferredValue(open);
   const [mergeTarget, setMergeTarget] = useState("");
@@ -412,6 +516,20 @@ const GroupCard = memo(function GroupCard({
             onKeyDown={(e) => e.key === " " && e.stopPropagation()}
             aria-label="Nome da playlist"
           />
+          <button
+            type="button"
+            className="flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs text-areia transition-colors hover:border-areia hover:text-papel"
+            onClick={(e) => {
+              // inside <summary>: don't open/close the card
+              e.preventDefault();
+              e.stopPropagation();
+              onOnly(g.id);
+            }}
+            aria-label={`Marcar só ${g.name}`}
+            title="Marca só este gênero e desmarca os outros"
+          >
+            Só este
+          </button>
           <span className="num text-4xl" style={{ color: g.include ? color : "var(--color-areia)" }}>
             {count.toLocaleString("pt-BR")}
           </span>
