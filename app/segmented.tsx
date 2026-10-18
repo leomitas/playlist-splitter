@@ -13,12 +13,15 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  small,
   className = "",
 }: {
   label: string;
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  // header size: smaller text and padding
+  small?: boolean;
   className?: string;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -37,7 +40,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className={`inline-flex flex-wrap gap-0.5 rounded-2xl border border-fio bg-cafe p-0.5 text-sm ${className}`}
+      className={`inline-flex flex-wrap gap-0.5 rounded-2xl border border-fio bg-cafe p-0.5 ${small ? "text-xs" : "text-sm"} ${className}`}
       onKeyDown={(e) => {
         const step = NEXT[e.key];
         const current = refs.current.findIndex((r) => r === document.activeElement);
@@ -61,7 +64,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={on}
             tabIndex={on ? 0 : -1}
-            className={`rounded-full px-3 py-1 whitespace-nowrap transition-colors ${
+            className={`rounded-full whitespace-nowrap transition-colors ${small ? "px-2.5 py-0.5" : "px-3 py-1"} ${
               on ? "bg-papel font-bold text-cafe" : "text-areia hover:bg-grafite-2 hover:text-papel"
             }`}
             onClick={() => select(i)}

@@ -1,24 +1,66 @@
 @import "tailwindcss";
 
-/* Warm, almost monochrome UI: color is reserved for genres (app/genre-colors.ts) */
-@theme {
-  --color-cafe: #1c1916;
-  --color-grafite: #27221e;
-  --color-grafite-2: #312a25;
-  --color-fio: #3e3631;
-  --color-papel: #f1eae1;
-  --color-areia: #b3a699;
-  --color-alerta: #f2a65a;
-  --color-erro: #ff8a7a;
-  --color-ok: #8fd6a3;
+/* Warm, almost monochrome UI: color is reserved for genres (app/genre-colors.ts).
+   Every color is a token; the names come from the dark original and stay as roles:
+   cafe = page background, grafite = surface, grafite-2 = raised surface, fio = border,
+   papel = text (and filled buttons), areia = secondary text. The head script
+   (app/boot-script.ts) sets data-theme before the first paint; tests/contrast.test.ts checks
+   the pairs against WCAG AA. */
+:root {
+  color-scheme: dark;
+  --cafe: #1c1916;
+  --grafite: #27221e;
+  --grafite-2: #312a25;
+  --fio: #3e3631;
+  --papel: #f1eae1;
+  --areia: #b3a699;
+  --alerta: #f2a65a;
+  --erro: #ff8a7a;
+  --ok: #8fd6a3;
+  --sombra: #000000;
+  /* genre colors: oklch(--genre-l, chroma x --genre-c, hue) */
+  --genre-l: 0.8;
+  --genre-c: 1;
+  --genre-neutral-l: 0.72;
+}
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  --cafe: #f6f1ea;
+  --grafite: #fffcf8;
+  --grafite-2: #ece4da;
+  --fio: #d9cec2;
+  --papel: #1f1a16;
+  --areia: #675a4e;
+  --alerta: #934a00;
+  --erro: #a8221b;
+  --ok: #1d6b36;
+  --sombra: #3b2f25;
+  --genre-l: 0.48;
+  --genre-c: 0.85;
+  --genre-neutral-l: 0.48;
+}
+
+@theme inline {
+  --color-cafe: var(--cafe);
+  --color-grafite: var(--grafite);
+  --color-grafite-2: var(--grafite-2);
+  --color-fio: var(--fio);
+  --color-papel: var(--papel);
+  --color-areia: var(--areia);
+  --color-alerta: var(--alerta);
+  --color-erro: var(--erro);
+  --color-ok: var(--ok);
+  --color-sombra: var(--sombra);
+}
+
+@theme {
   --font-display: var(--font-archivo), "Arial Narrow", sans-serif;
   --font-sans: var(--font-atkinson), "Segoe UI", sans-serif;
 }
 
-/* native scrollbars, selects and dropdowns follow the dark theme */
+/* native scrollbars, selects and dropdowns follow the theme through color-scheme */
 html {
-  color-scheme: dark;
   scrollbar-color: var(--color-fio) transparent;
   background: var(--color-cafe);
 }
@@ -147,7 +189,7 @@ dialog:focus-visible {
   outline: none;
 }
 dialog::backdrop {
-  background: rgb(28 25 22 / 0.8);
+  background: color-mix(in srgb, var(--color-cafe) 80%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

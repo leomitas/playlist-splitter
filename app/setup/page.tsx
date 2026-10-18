@@ -17,6 +17,7 @@ import {
   StatusChip,
   type StepStatus,
 } from "./setup-client";
+import { Preferences } from "../preferences";
 import { VIDEOS } from "./videos";
 
 export const metadata: Metadata = { title: "Configuração · Playlist Splitter" };
@@ -252,7 +253,9 @@ function TopNav({ ready }: { ready: boolean }) {
       ) : (
         <span className="wide text-lg sm:text-xl">Playlist Splitter</span>
       )}
-      {ready ? (
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+        <Preferences />
+        {ready ? (
         <Link href="/" className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline">
           <span aria-hidden>← </span>Voltar ao app
         </Link>
@@ -261,6 +264,7 @@ function TopNav({ ready }: { ready: boolean }) {
           <span aria-hidden>← </span>Voltar ao app <span className="sr-only">(indisponível: {LOCKED.toLowerCase()})</span>
         </span>
       )}
+      </div>
     </nav>
   );
 }

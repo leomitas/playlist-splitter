@@ -482,7 +482,7 @@ const Spectrum = memo(function Spectrum({
       {shown && (
         <div
           aria-hidden
-          className="pointer-events-none absolute top-full z-10 mt-2 flex -translate-x-1/2 items-baseline gap-2 rounded-md border border-fio bg-grafite-2 px-3 py-1.5 text-sm whitespace-nowrap shadow-lg shadow-black/30"
+          className="pointer-events-none absolute top-full z-10 mt-2 flex -translate-x-1/2 items-baseline gap-2 rounded-md border border-fio bg-grafite-2 px-3 py-1.5 text-sm whitespace-nowrap shadow-lg shadow-sombra/30"
           style={{ left: `clamp(6rem, ${hover?.x ?? 0}px, calc(100% - 6rem))` }}
         >
           <span className="size-2.5 flex-none self-center rounded-full" style={{ background: genreColor(shown.id) }} />

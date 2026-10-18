@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Atkinson_Hyperlegible } from "next/font/google";
+import { BOOT_SCRIPT } from "./boot-script";
 import "./globals.css";
 
 // display: variable width axis, condensed for numbers and expanded for the wordmark
@@ -22,7 +23,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" className={`${archivo.variable} ${atkinson.variable} min-h-full antialiased`}>
+    // the head script sets data-theme before hydration, hence suppressHydrationWarning
+    <html
+      lang="pt-BR"
+      className={`${archivo.variable} ${atkinson.variable} min-h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+      </head>
       <body className="flex min-h-dvh flex-col">{children}</body>
     </html>
   );

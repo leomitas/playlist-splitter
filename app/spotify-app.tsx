@@ -11,6 +11,7 @@ import { AnalysisPanel, itemStatus } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
 import { countryLookup } from "./country-lookup";
 import { PlaylistPicker } from "./playlist-picker";
+import { Preferences } from "./preferences";
 import { Preview } from "./preview";
 import { QuotaBanner, useSpotifyBlock } from "./quota-banner";
 import { RawError } from "./raw-error";
@@ -159,6 +160,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
                 </span>
               </>
             )}
+            <Preferences />
             <SetupLink />
             {logout}
           </div>
@@ -321,7 +323,10 @@ function AppSkeleton({ logout }: { logout: React.ReactNode }) {
       <header className="border-b border-fio">
         <div className="mx-auto flex max-w-7xl items-center gap-8 px-4 py-3 sm:px-6">
           <h1 className="wide text-lg sm:text-xl">Playlist Splitter</h1>
-          <div className="ml-auto">{logout}</div>
+          <div className="ml-auto flex items-center gap-3">
+            <Preferences />
+            {logout}
+          </div>
         </div>
       </header>
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-8 px-4 pt-6 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12">

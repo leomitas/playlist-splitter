@@ -1,9 +1,11 @@
 // Presentation only: one color per genre family, used for the spectrum, card bars, chips
-// and counts. Same lightness (OKLCH L 0.80) so every color reads on the dark surfaces (AA).
+// and counts. Hue and chroma identify the genre; lightness comes from the theme tokens
+// (--genre-l, --genre-c in globals.css): light colors with dark text on the dark theme, dark
+// colors with light text on the light one. tests/contrast.test.ts checks every genre (AA).
 
 import { OTHER } from "@/lib/genre-families";
 
-const HUES: Record<string, [hue: number, chroma: number]> = {
+export const GENRE_HUES: Record<string, [hue: number, chroma: number]> = {
   Punk: [5, 0.15],
   "Funk BR": [25, 0.14],
   "Funk Internacional": [15, 0.11],
@@ -27,14 +29,15 @@ const HUES: Record<string, [hue: number, chroma: number]> = {
 };
 
 // families outside the table still get a stable color
-function hashHue(s: string) {
+export const UNKNOWN_CHROMA = 0.12;
+export function hashHue(s: string) {
   let h = 0;
   for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360;
   return h;
 }
 
 export function genreColor(id: string): string {
-  if (id === OTHER) return "oklch(0.72 0 0)";
-  const [hue, chroma] = HUES[id] ?? [hashHue(id), 0.12];
-  return `oklch(0.8 ${chroma} ${hue})`;
+  if (id === OTHER) return "oklch(var(--genre-neutral-l) 0 0)";
+  const [hue, chroma] = GENRE_HUES[id] ?? [hashHue(id), UNKNOWN_CHROMA];
+  return `oklch(var(--genre-l) calc(${chroma} * var(--genre-c)) ${hue})`;
 }

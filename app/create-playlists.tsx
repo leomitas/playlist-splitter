@@ -434,7 +434,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
         }}
         // a click on the backdrop lands on the dialog itself
         onClick={(e) => e.target === e.currentTarget && (phase === "running" || phase === "done") && closeSheet()}
-        className="m-auto max-h-[min(52rem,calc(100dvh-2rem))] w-[min(44rem,calc(100%-2rem))] overflow-hidden rounded-2xl border border-fio bg-grafite p-0 text-papel shadow-2xl shadow-black/50"
+        className="m-auto max-h-[min(52rem,calc(100dvh-2rem))] w-[min(44rem,calc(100%-2rem))] overflow-hidden rounded-2xl border border-fio bg-grafite p-0 text-papel shadow-2xl shadow-sombra/50"
       >
         <div className="flex max-h-[min(52rem,calc(100dvh-2rem))] flex-col">
           <header className="flex flex-none items-start justify-between gap-4 border-b border-fio px-5 py-4 sm:px-6">
