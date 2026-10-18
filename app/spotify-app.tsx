@@ -46,6 +46,17 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
 
   const countries = useSyncExternalStore(countryLookup.subscribe, countryLookup.get, countryLookup.get);
 
+  // Bumped only when the analysis or the country lookup *finishes*, so the genre cards are
+  // sorted then and never while the user is editing them (adjusted during render)
+  const [reorderToken, setReorderToken] = useState(0);
+  const [phases, setPhases] = useState({ run: run?.phase, countries: countries.phase });
+  if (phases.run !== run?.phase || phases.countries !== countries.phase) {
+    const finished =
+      (run?.phase === "done" && phases.run !== "done") || (countries.phase === "done" && phases.countries !== "done");
+    setPhases({ run: run?.phase, countries: countries.phase });
+    if (finished) setReorderToken((n) => n + 1);
+  }
+
   // Artist countries, coherence flags and the artist consensus depend on the whole set, so
   // they're recomputed as tracks (or countries) arrive, in that order: the country decides the
   // bare "funk" tag, and the consensus uses the coherence flags
@@ -260,6 +271,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               storageKey={previewStorageKey(run.id)}
               createDisabledReason={block.reason ?? (busy ? "Aguarde a análise terminar" : undefined)}
               onSpotifyChanged={onSpotifyChanged}
+              reorderToken={reorderToken}
             />
           ) : active ? (
             <SpectrumSkeleton text="Lendo as primeiras faixas. Os gêneros aparecem aqui conforme cada playlist termina." />

@@ -17,6 +17,7 @@ import type { ConsensusStats } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { buildExport } from "@/lib/export";
 import { OTHER } from "@/lib/genre-families";
+import { loadSortBy, orderGroups, saveSortBy, SORT_LABELS, sortGroupIds, type SortBy } from "@/lib/group-order";
 import {
   initialState,
   pendingSync,
@@ -82,6 +83,8 @@ type PreviewProps = {
   createDisabledReason?: string;
   // called after playlists were created/updated in Spotify
   onSpotifyChanged: () => void;
+  // bumped when the analysis or the country lookup finishes: the cards are sorted again
+  reorderToken: number;
 };
 
 // Memoized: changes elsewhere on the page (playlist selection, analysis progress) skip it
@@ -92,10 +95,29 @@ export const Preview = memo(function Preview(props: PreviewProps) {
   return <PreviewEditor {...props} />;
 });
 
-function PreviewEditor({ tracks, duplicates, consensus, storageKey, createDisabledReason, onSpotifyChanged }: PreviewProps) {
+function PreviewEditor({
+  tracks,
+  duplicates,
+  consensus,
+  storageKey,
+  createDisabledReason,
+  onSpotifyChanged,
+  reorderToken,
+}: PreviewProps) {
   const fresh = useMemo(() => initialState(tracks), [tracks]);
   const [state, dispatch] = useReducer(reducer, null, () => loadSaved(storageKey, tracks) ?? fresh);
   const byKey = useMemo(() => new Map(tracks.map((t) => [t.key, t])), [tracks]);
+
+  // Card order: a list of ids, sorted only when the analysis/lookup finishes, the criterion
+  // changes or "Reordenar" is clicked (edits never move a card). Sorting happens during render
+  // when one of those inputs changed, so the new order paints in the same frame.
+  const [sortBy, setSortBy] = useState<SortBy>(loadSortBy);
+  const [manualSort, setManualSort] = useState(0);
+  const lowOf = (g: Group) => g.trackKeys.reduce((n, k) => n + (byKey.get(k)?.lowConfidence ? 1 : 0), 0);
+  const sortTrigger = `${reorderToken}|${sortBy}|${manualSort}`;
+  const [sorted, setSorted] = useState(() => ({ trigger: sortTrigger, order: sortGroupIds(state.groups, sortBy, lowOf) }));
+  if (sorted.trigger !== sortTrigger) setSorted({ trigger: sortTrigger, order: sortGroupIds(state.groups, sortBy, lowOf) });
+  const orderedGroups = useMemo(() => orderGroups(state.groups, sorted.order), [state.groups, sorted.order]);
 
   // New playlists finished, or the artist consensus changed some families: slot the tracks in
   // without touching the user's edits (tracks moved by hand are never re-placed)
@@ -136,7 +158,8 @@ function PreviewEditor({ tracks, duplicates, consensus, storageKey, createDisabl
   const deferredGroups = useDeferredValue(state.groups);
   const spectrum = useMemo(() => {
     const total = deferredGroups.reduce((n, g) => n + g.trackKeys.length, 0);
-    const bands = deferredGroups
+    // largest first, "Funk (incerto)" and "Outros" last: the cards' default order
+    const bands = orderGroups(deferredGroups, sortGroupIds(deferredGroups, "size", () => 0))
       .filter((g) => g.trackKeys.length > 0)
       .map((g) => ({ id: g.id, name: g.name, count: g.trackKeys.length, include: g.include }));
     const genres = bands.filter((b) => b.id !== OTHER).length;
@@ -176,7 +199,32 @@ function PreviewEditor({ tracks, duplicates, consensus, storageKey, createDisabl
               {deferredGroups.filter((g) => g.include).length} de {deferredGroups.length} marcados
             </span>
           </h2>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex items-center gap-2 text-sm text-areia">
+              Ordenar por
+              <select
+                className="rounded-md border border-fio bg-cafe px-2 py-1 text-papel"
+                value={sortBy}
+                onChange={(e) => {
+                  const by = e.target.value as SortBy;
+                  setSortBy(by);
+                  saveSortBy(by);
+                }}
+              >
+                {(Object.keys(SORT_LABELS) as SortBy[]).map((by) => (
+                  <option key={by} value={by}>
+                    {SORT_LABELS[by]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
+              onClick={() => setManualSort((n) => n + 1)}
+              title="Aplica a ordem escolhida de novo (a lista não se reordena sozinha enquanto você edita)"
+            >
+              Reordenar
+            </button>
             <button
               className="text-sm text-areia underline-offset-4 transition-colors hover:text-papel hover:underline"
               onClick={() =>
@@ -195,7 +243,7 @@ function PreviewEditor({ tracks, duplicates, consensus, storageKey, createDisabl
         </div>
 
         <div className="flex flex-col gap-2">
-          {state.groups.map((g) => (
+          {orderedGroups.map((g) => (
             <GroupCard
               key={g.id}
               group={g}

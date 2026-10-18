@@ -1,5 +1,5 @@
 import type { ClassifiedTrack } from "@/lib/classify";
-import { OTHER } from "@/lib/genre-families";
+import { OTHER, UNCERTAIN_FAMILIES } from "@/lib/genre-families";
 
 const MIN_GROUP_SIZE = 3;
 
@@ -73,8 +73,8 @@ export function initialState(tracks: ClassifiedTrack[]): PreviewState {
     .map(([family, keys]) => ({ id: family, name: family, include: false, trackKeys: keys }));
   // always present so any track can be moved there
   groups.push({ id: OTHER, name: OTHER, include: false, trackKeys: other });
-  // only the largest group starts selected ("Outros" is last, so only if it's the only one)
-  const first = groups.find((g) => g.trackKeys.length > 0);
+  // only the largest group starts selected; "Outros" and "Funk (incerto)" never do
+  const first = groups.find((g) => g.trackKeys.length > 0 && !UNCERTAIN_FAMILIES.has(g.id));
   if (first) first.include = true;
   return { groups, autoMoved, aliases: {}, manual: {}, inferredPlaced: inferredOf(tracks) };
 }
