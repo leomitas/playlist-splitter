@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1 -p 3000",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "setup:env": "node scripts/setup-env.mjs",
+    "doctor": "node scripts/doctor.mjs"
   },
   "dependencies": {
     "@auth/core": "0.41.3",
