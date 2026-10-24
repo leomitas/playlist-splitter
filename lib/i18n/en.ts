@@ -221,6 +221,8 @@ export const en: Dict = {
   "spectrum.label": "Genre spectrum: each band checks or unchecks its genre",
   "spectrum.band": "{name}: {tracks}, {percent}%, {state}",
   "spectrum.tooltip": "{tracks} · {percent}% · {state}",
+  "spectrum.included": "Included",
+  "spectrum.excluded": "Excluded",
 
   // preview: genre list
   "preview.genres": "Genres",

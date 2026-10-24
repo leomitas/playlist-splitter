@@ -62,8 +62,9 @@ function pairs(t: Tokens, gamut: "clip" | "map"): Pair[] {
     const color = gamut === "clip" ? oklchToLinear(lch) : toGamut(lch);
     for (const [name, surface] of Object.entries(bg)) list.push({ label: `${id} text on ${name}`, fg: color, bg: surface });
     list.push({ label: `cafe text on ${id} bar`, fg: bg.cafe, bg: color });
-    // unchecked spectrum band: color-mix(genre 28%/45%, cafe) under papel text
-    for (const p of [0.28, 0.45]) list.push({ label: `papel on ${id} dimmed ${p * 100}%`, fg: hex(t, "papel"), bg: mixOklch(lch, p, cafeLch) });
+    // unchecked spectrum band: color-mix(genre 40%/50%, cafe) under papel text (the stripes only
+    // move it further toward cafe)
+    for (const p of [0.4, 0.5]) list.push({ label: `papel on ${id} dimmed ${p * 100}%`, fg: hex(t, "papel"), bg: mixOklch(lch, p, cafeLch) });
   }
   return list;
 }

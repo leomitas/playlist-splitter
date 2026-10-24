@@ -223,6 +223,8 @@ export const pt = {
   "spectrum.label": "Espectro de gêneros: cada faixa marca ou desmarca o gênero",
   "spectrum.band": "{name}: {tracks}, {percent}%, {state}",
   "spectrum.tooltip": "{tracks} · {percent}% · {state}",
+  "spectrum.included": "Incluído",
+  "spectrum.excluded": "Excluído",
 
   // preview: genre list
   "preview.genres": "Gêneros",

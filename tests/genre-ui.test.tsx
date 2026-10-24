@@ -65,6 +65,22 @@ describe("spectrum bands", () => {
     expect(pressed(band("Rock"))).toBe("false");
   });
 
+  it("data-state follows the checked groups (Clear, Check all, Only this)", async () => {
+    const user = userEvent.setup();
+    const { band } = renderPreview();
+    const states = () => ["Rock", "Pop", "Jazz", "Folk"].map((name) => band(name).getAttribute("data-state"));
+    expect(states()).toEqual(["included", "included", "included", "included"]);
+
+    await user.click(screen.getByRole("button", { name: "Limpar" }));
+    expect(states()).toEqual(["excluded", "excluded", "excluded", "excluded"]);
+
+    await user.click(screen.getByRole("button", { name: "Marcar todos" }));
+    expect(states()).toEqual(["included", "included", "included", "included"]);
+
+    await user.click(screen.getByRole("button", { name: "Marcar só Jazz" }));
+    expect(states()).toEqual(["excluded", "excluded", "included", "excluded"]);
+  });
+
   it("Shift+click selects the range from the last band clicked", async () => {
     const user = userEvent.setup();
     const { band } = renderPreview();

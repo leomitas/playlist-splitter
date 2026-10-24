@@ -473,6 +473,7 @@ const Spectrum = memo(function Spectrum({
                 state: t(on ? "common.checked" : "common.unchecked"),
               })}
               data-drag-id={b.id}
+              data-state={on ? "included" : "excluded"}
               onPointerDown={(e) => select.onPointerDown(b.id, e)}
               onClick={(e) => select.onTap(b.id, e)}
               onKeyDown={(e) => {
@@ -485,14 +486,15 @@ const Spectrum = memo(function Spectrum({
               onBlur={() => setHover(null)}
               className={`flex min-w-3 flex-col justify-end overflow-hidden px-2 pb-1.5 transition-colors duration-150 focus-visible:outline-offset-[-3px] ${
                 labeled.has(b.id) ? "min-w-12 sm:min-w-20" : ""
-              } ${on ? "text-cafe" : "text-papel"}`}
+              } ${on ? "text-cafe" : "stripes text-papel"}`}
               style={{
                 flexGrow: b.count,
                 flexBasis: 0,
-                // unchecked: dimmed background, light text that stays readable
-                background: on
+                // unchecked: the color at 40% over the page (50% hovered) under striped overlay; the
+                // text stays opaque so it keeps AA (tests/contrast.test.ts)
+                backgroundColor: on
                   ? color
-                  : `color-mix(in oklch, ${color} ${hover?.id === b.id ? 45 : 28}%, var(--color-cafe))`,
+                  : `color-mix(in oklch, ${color} ${hover?.id === b.id ? 50 : 40}%, var(--color-cafe))`,
               }}
             >
               {labeled.has(b.id) && (
@@ -517,7 +519,7 @@ const Spectrum = memo(function Spectrum({
             {t("spectrum.tooltip", {
               tracks: t("common.tracks", { count: shown.count }),
               percent: Math.round((shown.count / Math.max(1, total)) * 100),
-              state: t(shownOn(select.preview, shown.id, isOn(shown.id)) ? "common.checked" : "common.unchecked"),
+              state: t(shownOn(select.preview, shown.id, isOn(shown.id)) ? "spectrum.included" : "spectrum.excluded"),
             })}
           </span>
         </div>
