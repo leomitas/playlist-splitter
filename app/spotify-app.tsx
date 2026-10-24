@@ -171,8 +171,10 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 flex-1 items-start gap-8 px-4 pt-6 pb-36 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12">
-        {/* desktop: fixed height under the header; only the playlist list scrolls, the analysis stays in view */}
+      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 flex-1 items-start gap-8 px-4 pt-6 pb-36 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12 lg:pb-0">
+        {/* desktop: fixed height between the header and the bottom bar; only the playlist list scrolls, the
+            analysis stays in view. The bottom padding sits on the section (lg:pb-36) so the sticky aside
+            is never pushed up behind the header at the end of the page */}
         <aside
           className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-[calc(100dvh-11rem)]"
           aria-label={t("steps.choose")}
@@ -261,7 +263,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
           )}
         </aside>
 
-        <section className="flex min-w-0 flex-col gap-6" aria-label={t("steps.review")}>
+        <section className="flex min-w-0 flex-col gap-6 lg:pb-36" aria-label={t("steps.review")}>
           {run && tracks.length > 0 ? (
             <Preview
               key={run.id}

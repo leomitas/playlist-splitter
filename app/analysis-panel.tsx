@@ -113,9 +113,11 @@ export function AnalysisPanel({
   const syncing = run.sync?.state === "lendo" || run.sync?.state === "gêneros";
   const syncLine = syncText(i18n, run.sync);
 
+  // desktop sidebar: 21rem ~ its title, the picker controls, the button and the gaps; the panel takes
+  // at most half of the rest (scrolling inside), the playlist list gets the remainder
   return (
     <section
-      className="flex flex-none flex-col gap-3 rounded-xl border border-fio bg-grafite p-4 text-sm lg:max-h-[55%] lg:overflow-y-auto"
+      className="flex flex-none flex-col gap-3 rounded-xl border border-fio bg-grafite p-4 text-sm lg:max-h-[max(6rem,calc((100%-21rem)/2))] lg:overflow-y-auto"
       aria-label={t("analysis.label")}
     >
       <div className="flex items-end justify-between gap-4">
@@ -312,7 +314,7 @@ function CountryProgress({ state, artists }: { state: CountryState; artists: Map
           </button>
         )}
       </div>
-      <p className="text-areia">{t("country.body", { count: artists.size })}</p>
+      <p className="text-areia lg:[@media(max-height:56rem)]:hidden">{t("country.body", { count: artists.size })}</p>
       {running && (
         <>
           <div className="h-1 overflow-hidden rounded-full bg-cafe" aria-hidden>

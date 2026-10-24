@@ -271,7 +271,7 @@ export function PlaylistPicker({
   }
 
   return (
-    <div className={`flex flex-col gap-1 rounded-xl border border-fio bg-grafite p-2 lg:min-h-40 lg:flex-1 ${dragSel ? "select-none" : ""}`}>
+    <div className={`flex flex-col gap-1 rounded-xl border border-fio bg-grafite p-2 lg:min-h-0 lg:flex-1 ${dragSel ? "select-none" : ""}`}>
       <div className="flex flex-none flex-col gap-2 border-b border-fio px-2 pt-1 pb-2.5">
         <label className="flex cursor-pointer items-center gap-3 has-disabled:cursor-not-allowed">
           <input
@@ -332,7 +332,7 @@ export function PlaylistPicker({
       </div>
       <ul
         ref={listRef}
-        className="flex max-h-[50vh] min-h-0 flex-col overflow-y-auto lg:max-h-none lg:flex-1"
+        className="flex max-h-[50vh] min-h-0 flex-col overflow-y-auto lg:max-h-none lg:min-h-24 lg:flex-1"
         onPointerMove={(e) => {
           if (drag.current?.pointerId === e.pointerId) drag.current.y = e.clientY;
         }}
