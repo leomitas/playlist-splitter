@@ -483,7 +483,7 @@ const Spectrum = memo(function Spectrum({
               onMouseEnter={(e) => point(e, b.id)}
               onFocus={(e) => point(e, b.id)}
               onBlur={() => setHover(null)}
-              className={`flex min-w-3 cursor-pointer flex-col justify-end overflow-hidden px-2 pb-1.5 transition-colors duration-150 focus-visible:outline-offset-[-3px] ${
+              className={`flex min-w-3 flex-col justify-end overflow-hidden px-2 pb-1.5 transition-colors duration-150 focus-visible:outline-offset-[-3px] ${
                 labeled.has(b.id) ? "min-w-12 sm:min-w-20" : ""
               } ${on ? "text-cafe" : "text-papel"}`}
               style={{
@@ -594,7 +594,7 @@ const GroupCard = memo(function GroupCard({
       style={{ "--check": color, borderLeft: `6px solid ${g.include ? color : "var(--color-fio)"}` } as CSSProperties}
     >
       <summary
-        className="flex cursor-pointer flex-col gap-2.5 p-3 pl-4 select-none"
+        className="flex flex-col gap-2.5 p-3 pl-4 select-none"
         // Shift+click elsewhere on the header must not select the text between two clicks
         onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       >

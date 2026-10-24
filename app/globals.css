@@ -110,6 +110,31 @@ option {
   font-weight: 800;
 }
 
+/* Tailwind 4's preflight leaves buttons with the arrow cursor; every clickable control gets the
+   hand, disabled ones get not-allowed. :where() keeps specificity at 0 so utilities still win. */
+@layer base {
+  :where(
+      button,
+      [role="button"],
+      [role="tab"],
+      summary,
+      select,
+      input[type="checkbox"],
+      input[type="radio"],
+      label:has(input[type="checkbox"], input[type="radio"]),
+      a:any-link
+    ) {
+    cursor: pointer;
+  }
+  :where(button, [role="button"], [role="tab"], select, input[type="checkbox"], input[type="radio"]):is(
+      :disabled,
+      [aria-disabled="true"]
+    ),
+  :where(label:has(input[type="checkbox"]:disabled, input[type="radio"]:disabled)) {
+    cursor: not-allowed;
+  }
+}
+
 /* 24px checkbox; --check sets the checked fill (genre color or paper) */
 .check {
   appearance: none;
