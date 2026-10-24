@@ -10,6 +10,7 @@ import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
 import { genreColor } from "./genre-colors";
+import { useHeightVar } from "./height-var";
 import { useI18n } from "./i18n";
 import { RateLimitNotice } from "./rate-limit-notice";
 import { ErrorBody } from "./raw-error";
@@ -144,6 +145,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   // the dialog can be hidden while running or done; the footer then shows the progress
   const [sheetOpen, setSheetOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const footerRef = useHeightVar("--app-footer-h");
   // state updates are async; the ref blocks a second click landing before re-render
   const running = useRef(false);
   const jobs = useRef<Job[]>([]);
@@ -382,7 +384,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 
   // the page footer: the create button, or a compact progress line while the dialog is closed
   const footer = (phase === "idle" || !sheetOpen) && (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-fio bg-grafite/95 backdrop-blur">
+    <div ref={footerRef} className="fixed inset-x-0 bottom-0 z-30 border-t border-fio bg-grafite/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         {phase === "idle" ? (
           <>

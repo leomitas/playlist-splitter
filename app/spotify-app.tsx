@@ -10,6 +10,7 @@ import { isReadablePlaylist, LIKED_ID, type ApiResult, type LikedSummary, type M
 import { AnalysisPanel, itemStatus } from "./analysis-panel";
 import { analysis, previewStorageKey } from "./analysis-queue";
 import { countryLookup } from "./country-lookup";
+import { useHeightVar } from "./height-var";
 import { PlaylistPicker } from "./playlist-picker";
 import { Preferences } from "./preferences";
 import { Preview } from "./preview";
@@ -33,6 +34,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   const [cacheCleared, setCacheCleared] = useState(false);
   const run = useSyncExternalStore(analysis.subscribe, analysis.get, () => null);
   const block = useSpotifyBlock();
+  const headerRef = useHeightVar("--app-header-h");
 
   const refreshPlaylists = useCallback(async (force: boolean) => {
     setRefreshing(true);
@@ -146,7 +148,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
 
   return (
     <div className="flex w-full flex-1 flex-col self-stretch">
-      <header className="z-20 border-b border-fio bg-cafe/95 backdrop-blur lg:sticky lg:top-0">
+      <header ref={headerRef} className="z-20 border-b border-fio bg-cafe/95 backdrop-blur lg:sticky lg:top-0">
         <QuotaBanner until={block.until} />
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 sm:px-6">
           <h1 className="wide text-lg sm:text-xl">Playlist Splitter</h1>
@@ -172,11 +174,12 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
       </header>
 
       <div className="mx-auto grid w-full max-w-7xl grid-cols-1 flex-1 items-start gap-8 px-4 pt-6 pb-36 sm:px-6 lg:grid-cols-[21rem_minmax(0,1fr)] lg:gap-12 lg:pb-0">
-        {/* desktop: fixed height between the header and the bottom bar; only the playlist list scrolls, the
-            analysis stays in view. The bottom padding sits on the section (lg:pb-36) so the sticky aside
-            is never pushed up behind the header at the end of the page */}
+        {/* desktop: fits between the header and the bottom bar; only the playlist list scrolls, the analysis
+            stays in view. The sticky offset equals the grid's top padding (pt-6), so it sits at the same
+            place at scroll 0 and once stuck. The bottom padding sits on the section (lg:pb-36) so the
+            sticky aside is never pushed up behind the header at the end of the page */}
         <aside
-          className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-[calc(100dvh-11rem)]"
+          className="flex flex-col gap-4 lg:sticky lg:top-[calc(var(--app-header-h,0px)+--spacing(6))] lg:h-[calc(100dvh-var(--app-header-h,0px)-var(--app-footer-h,0px)-(--spacing(10)))]"
           aria-label={t("steps.choose")}
         >
           {!me.ok && <RawError error={me} />}
