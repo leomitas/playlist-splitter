@@ -1,6 +1,5 @@
 // Browser-side loaders: every Spotify read goes through the queue (spotify.call) and a cache.
 
-import type { GenreTargets } from "@/lib/existing-playlists";
 import { idbDelete, idbGet, idbSet } from "@/lib/idb";
 import { readAllPages, type ReadProgress, type ReadResult } from "@/lib/paged-reader";
 import { DESCRIPTION } from "@/lib/playlist-plan";
@@ -52,17 +51,6 @@ export async function rememberCreated(p: CreatedPlaylist, owner: Me) {
     copy[i] = { ...list[i], snapshot_id: p.snapshotId, items: { total: p.uris.length } };
     return copy;
   });
-}
-
-// Genre -> playlist id per account, in the "state" store so "Limpar cache" keeps it
-const targetsKey = (myId: string) => `genre-targets:${myId}`;
-
-export const loadGenreTargets = async (myId: string): Promise<GenreTargets> =>
-  (await idbGet<GenreTargets>("state", targetsKey(myId))) ?? {};
-
-export async function rememberGenreTarget(myId: string, groupId: string, playlistId: string) {
-  const current = await loadGenreTargets(myId);
-  if (current[groupId] !== playlistId) await idbSet("state", targetsKey(myId), { ...current, [groupId]: playlistId });
 }
 
 // URIs of an app playlist: from the created-playlist cache when the snapshot still matches,

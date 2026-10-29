@@ -49,7 +49,10 @@ export function findTargets<P extends ListedPlaylist>(
 export type PlanSummary = { update: number; create: number; tracks: number };
 
 // Playlists that will receive tracks: existing ones are updated, the rest created
-export function planSummary(planned: Pick<PlannedPlaylist, "groupId" | "uris">[], willUpdate: (groupId: string) => boolean): PlanSummary {
+export function planSummary(
+  planned: Pick<PlannedPlaylist, "groupId" | "uris">[],
+  willUpdate: (groupId: string) => boolean,
+): PlanSummary {
   const s: PlanSummary = { update: 0, create: 0, tracks: 0 };
   for (const p of planned) {
     if (p.uris.length === 0) continue;

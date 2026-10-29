@@ -3,13 +3,15 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { createWarnings, type CreateWarnings } from "@/lib/create-warnings";
-import { chunk, findSplitterPlaylists, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
+import { findTarget, planSummary, summaryKind, type PlanSummary } from "@/lib/existing-playlists";
+import { chunk, missingUris, planPlaylists, TRACK_URI, type PlannedPlaylist } from "@/lib/playlist-plan";
 import type { Group } from "@/lib/preview-state";
 import type { ApiError, ApiResult, Me } from "@/lib/spotify";
 import { spotify } from "@/lib/spotify-client";
 import { addTracks, createPlaylist } from "./actions";
 import { formatEta } from "./analysis-panel";
 import { genreColor } from "./genre-colors";
+import { loadGenreTargets, rememberGenreTarget } from "./genre-targets";
 import { useHeightVar } from "./height-var";
 import { useI18n } from "./i18n";
 import { RateLimitNotice } from "./rate-limit-notice";
@@ -17,6 +19,9 @@ import { ErrorBody } from "./raw-error";
 import { loadCreatedUris, loadMe, loadPlaylists, rememberCreated, type CreatedPlaylist } from "./spotify-data";
 
 type Mode = "update" | "create";
+
+// What the review shows per genre: update an existing playlist (named `name`) or create `name`
+export type CardTarget = { update: boolean; name: string };
 
 type Progress = {
   status:
@@ -64,6 +69,7 @@ function restartClock(c: Clock) {
 
 type ExistingMatch = {
   playlistId: string;
+  name: string;
   url: string;
   newUris: string[];
   // how many of the user's playlists matched; only the first is used
@@ -72,35 +78,41 @@ type ExistingMatch = {
   current: CreatedPlaylist;
 };
 
-// Read-only: looks for playlists this app created earlier with the same name. Uses the session's
-// playlist list (patched after every write) and the created-playlist cache, so nothing is read
-// again unless a playlist's snapshot changed.
+// Read-only: looks for playlists this app created earlier, by the saved genre -> playlist id
+// and then by name (lib/existing-playlists.ts). Uses the session's playlist list (patched after
+// every write) and the created-playlist cache, so nothing is read again unless a playlist's
+// snapshot changed.
 async function findExisting(
   planned: PlannedPlaylist[],
+  groups: Group[],
 ): Promise<ApiResult<{ me: Me; found: Record<string, ExistingMatch | null> }>> {
   const me = await loadMe();
   if (!me.ok) return me;
   const playlists = await loadPlaylists();
   if (!playlists.ok) return playlists;
+  const saved = await loadGenreTargets(me.data.id);
+  const byId = new Map(groups.map((g) => [g.id, g]));
 
   const result: Record<string, ExistingMatch | null> = {};
   for (const p of planned) {
-    const found = findSplitterPlaylists(playlists.data, me.data.id, p.name);
-    if (found.length === 0) {
+    const target = findTarget(byId.get(p.groupId) ?? { id: p.groupId, name: p.name }, playlists.data, me.data.id, saved);
+    if (!target) {
       result[p.groupId] = null;
       continue;
     }
-    const existing = await loadCreatedUris(found[0], me.data);
+    const found = target.playlist;
+    const existing = await loadCreatedUris(found, me.data);
     if (!existing.ok) return existing;
     result[p.groupId] = {
-      playlistId: found[0].id,
-      url: `https://open.spotify.com/playlist/${found[0].id}`,
+      playlistId: found.id,
+      name: found.name,
+      url: `https://open.spotify.com/playlist/${found.id}`,
       newUris: missingUris(
         p.uris.filter((u) => TRACK_URI.test(u)),
         existing.data,
       ),
-      matches: found.length,
-      current: { id: found[0].id, name: found[0].name, snapshotId: found[0].snapshot_id, uris: existing.data },
+      matches: target.matches,
+      current: { id: found.id, name: found.name, snapshotId: found.snapshot_id, uris: existing.data },
     };
   }
   return { ok: true, data: { me: me.data, found: result } };
@@ -119,11 +131,14 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   groups,
   tracks,
   disabledReason,
+  targets = null,
   onDone,
 }: {
   groups: Group[];
   tracks: Map<string, ClassifiedTrack>;
   disabledReason?: string;
+  // which genres already have a playlist (null while unknown: everything counts as new)
+  targets?: Record<string, CardTarget> | null;
   onDone: () => void;
 }) {
   const i18n = useI18n();
@@ -153,13 +168,23 @@ export const CreatePlaylists = memo(function CreatePlaylists({
   // owner for the playlist-list patch, and each group's playlist as Spotify last confirmed it
   const owner = useRef<Me | null>(null);
   const records = useRef(new Map<string, CreatedPlaylist>());
-  // what the action bar announces: playlists with at least one valid track, and their tracks
-  const outline = useMemo(() => {
-    const planned = planPlaylists(groups, tracks).filter((p) => p.uris.length > 0);
-    return { playlists: planned.length, tracks: planned.reduce((sum, p) => sum + p.uris.length, 0) };
-  }, [groups, tracks]);
+  // what the action bar announces: playlists with at least one valid track (to update or to
+  // create), and their tracks
+  const outline = useMemo(
+    () => planSummary(planPlaylists(groups, tracks), (id) => !!targets?.[id]?.update),
+    [groups, tracks, targets],
+  );
+  const outlineCount = outline.update + outline.create;
   // a group still named after its family shows (and gets created with) the translated name
   const shownName = (groupId: string, name: string) => (name === groupId ? genre(groupId) : name);
+  // "Atualizar N playlists" when nothing is new, "Criar M…" when nothing exists, both otherwise
+  const planLabel = (s: PlanSummary, withTracks: boolean) => {
+    const tracksText = t("common.tracks", { count: s.tracks });
+    const kind = summaryKind(s);
+    if (kind === "update") return t("plan.update", { count: s.update });
+    if (kind === "mixed") return t(withTracks ? "plan.mixedTracks" : "plan.mixed", { update: s.update, create: s.create, tracks: tracksText });
+    return withTracks ? t("footer.create", { count: s.create, tracks: tracksText }) : t("create.title.confirm", { count: s.create });
+  };
 
   const update = (groupId: string, p: Partial<Progress>) =>
     setProgress((prev) => ({ ...prev, [groupId]: { ...prev[groupId], ...p } }));
@@ -195,7 +220,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
     setUncertainOk(false);
     setPhase("checking");
     setSheetOpen(true);
-    const r = await findExisting(planned);
+    const r = await findExisting(planned, groups);
     const found = r.ok ? r.data.found : {};
     if (r.ok) owner.current = r.data.me;
     setCheckError(r.ok ? null : r);
@@ -251,6 +276,8 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 
     let playlistId = from?.playlistId ?? match?.playlistId;
     if (match && !records.current.has(p.groupId)) records.current.set(p.groupId, match.current);
+    // the next review finds this playlist by id, even after a rename
+    if (match && owner.current) await rememberGenreTarget(owner.current.id, p.groupId, match.playlistId);
     if (!playlistId) {
       update(p.groupId, { status: "criando" });
       const created = await spotify.call(() => createPlaylist(p.name, isPublic), "/me/playlists");
@@ -263,6 +290,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
       playlistId = created.data.id;
       update(p.groupId, { url: created.data.url, playlistId });
       await remember(p.groupId, { id: playlistId, name: created.data.name, snapshotId: created.data.snapshot_id, uris: [] });
+      if (owner.current) await rememberGenreTarget(owner.current.id, p.groupId, playlistId);
     }
     const already = from?.added ?? 0;
     const { added, error } = await addInBatches(p.groupId, playlistId, uris.slice(already), already, onCall);
@@ -391,19 +419,16 @@ export const CreatePlaylists = memo(function CreatePlaylists({
             <p className="text-sm text-areia" aria-live="polite">
               {disabledReason
                 ? t("footer.analyzing")
-                : outline.playlists === 0
+                : outlineCount === 0
                   ? t("footer.noneMarked")
                   : t("footer.review")}
             </p>
             <button
               className={`w-full sm:w-auto ${primary}`}
-              disabled={!!disabledReason || outline.playlists === 0}
+              disabled={!!disabledReason || outlineCount === 0}
               onClick={openConfirm}
             >
-              {disabledReason ??
-                (outline.playlists === 0
-                  ? t("footer.noGenre")
-                  : t("footer.create", { count: outline.playlists, tracks: t("common.tracks", { count: outline.tracks }) }))}
+              {disabledReason ?? (outlineCount === 0 ? t("footer.noGenre") : planLabel(outline, true))}
             </button>
           </>
         ) : (
@@ -423,12 +448,13 @@ export const CreatePlaylists = memo(function CreatePlaylists({
 
   if (phase === "idle") return footer;
 
-  const willCreate = plan.filter((p) => p.uris.length > 0).length;
+  // follows the per-playlist choice (update or create a new one)
+  const chosen = planSummary(plan, (id) => modes[id] === "update" && !!existing[id]);
   const title =
     phase === "checking"
       ? t("create.title.checking")
       : phase === "confirm"
-        ? t("create.title.confirm", { count: willCreate })
+        ? planLabel(chosen, false)
         : phase === "running"
           ? t("create.title.running")
           : failedCount > 0
@@ -530,72 +556,89 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                     <RawError error={checkError} />
                   </div>
                 )}
-                <ul className="flex flex-col gap-2">
-                  {plan.map((p) => {
-                    const match = existing[p.groupId];
-                    const mode = modes[p.groupId];
-                    const setMode = (m: Mode) => setModes({ ...modes, [p.groupId]: m });
-                    const color = genreColor(p.groupId);
-                    return (
-                      <li
-                        key={p.groupId}
-                        className="flex flex-col gap-2 rounded-lg border border-fio bg-cafe/40 p-3 pl-4"
-                        style={{ borderLeft: `4px solid ${p.uris.length > 0 ? color : "var(--color-fio)"}` }}
-                      >
-                        <div className="flex items-baseline justify-between gap-3">
-                          <p className="min-w-0 truncate font-bold">{p.name}</p>
-                          <p className="flex-none text-sm text-areia">
-                            <span className="num mr-1 text-2xl" style={{ color }}>
-                              {n(p.uris.length)}
-                            </span>
-                            {t("create.tracksUnit", { count: p.uris.length })}
-                          </p>
-                        </div>
-                        {p.ignored > 0 && (
-                          <p className="text-xs text-areia">{t("create.ignored", { count: p.ignored })}</p>
-                        )}
-                        {match ? (
-                          <fieldset className="flex flex-col gap-2">
-                            <legend className="sr-only">{t("create.whatToDo", { name: p.name })}</legend>
-                            <div className="flex flex-wrap gap-2 text-sm">
-                              <ModeOption
-                                name={p.groupId}
-                                checked={mode === "update"}
-                                onChange={() => setMode("update")}
-                                label={
-                                  match.newUris.length > 0
-                                    ? t("create.updateExisting", { count: match.newUris.length })
-                                    : t("create.updateNothing")
-                                }
-                              />
-                              <ModeOption
-                                name={p.groupId}
-                                checked={mode === "create"}
-                                onChange={() => setMode("create")}
-                                label={t("create.createNew", { visibility: t(isPublic ? "create.public" : "create.private") })}
-                              />
-                            </div>
-                            <p className="text-xs text-areia">
-                              {t("create.exists")}{" "}
-                              <a className="text-papel underline underline-offset-2" href={match.url} target="_blank" rel="noreferrer">
-                                {t("create.viewOnSpotify")}
-                              </a>
-                              {match.matches > 1 && (
-                                <span className="text-alerta"> {t("create.manyMatches", { count: match.matches })}</span>
+                {[
+                  { kind: "update" as const, items: plan.filter((p) => existing[p.groupId]) },
+                  { kind: "create" as const, items: plan.filter((p) => !existing[p.groupId]) },
+                ]
+                  .filter((section) => section.items.length > 0)
+                  .map(({ kind, items }) => (
+                    <section key={kind} aria-labelledby={`plan-${kind}`} className="flex flex-col gap-2">
+                      <div>
+                        <h3 id={`plan-${kind}`} className="font-bold">
+                          {t(kind === "update" ? "create.section.update" : "create.section.create", {
+                            count: items.filter((p) => p.uris.length > 0).length,
+                          })}
+                        </h3>
+                        {kind === "update" && <p className="text-xs text-areia">{t("create.section.updateHint")}</p>}
+                      </div>
+                      <ul className="flex flex-col gap-2">
+                        {items.map((p) => {
+                          const match = existing[p.groupId];
+                          const mode = modes[p.groupId];
+                          const setMode = (m: Mode) => setModes({ ...modes, [p.groupId]: m });
+                          const color = genreColor(p.groupId);
+                          return (
+                            <li
+                              key={p.groupId}
+                              className="flex flex-col gap-2 rounded-lg border border-fio bg-cafe/40 p-3 pl-4"
+                              style={{ borderLeft: `4px solid ${p.uris.length > 0 ? color : "var(--color-fio)"}` }}
+                            >
+                              <div className="flex items-baseline justify-between gap-3">
+                                <p className="min-w-0 truncate font-bold">{p.name}</p>
+                                <p className="flex-none text-sm text-areia">
+                                  <span className="num mr-1 text-2xl" style={{ color }}>
+                                    {n(p.uris.length)}
+                                  </span>
+                                  {t("create.tracksUnit", { count: p.uris.length })}
+                                </p>
+                              </div>
+                              {p.ignored > 0 && (
+                                <p className="text-xs text-areia">{t("create.ignored", { count: p.ignored })}</p>
                               )}
-                            </p>
-                          </fieldset>
-                        ) : p.uris.length === 0 ? (
-                          <p className="text-xs text-erro">{t("create.willNotCreate")}</p>
-                        ) : (
-                          <p className="text-xs text-areia">
-                            {t("create.newPlaylist", { visibility: t(isPublic ? "create.public" : "create.private") })}
-                          </p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                              {match ? (
+                                <fieldset className="flex flex-col gap-2">
+                                  <legend className="sr-only">{t("create.whatToDo", { name: p.name })}</legend>
+                                  <div className="flex flex-wrap gap-2 text-sm">
+                                    <ModeOption
+                                      name={p.groupId}
+                                      checked={mode === "update"}
+                                      onChange={() => setMode("update")}
+                                      label={
+                                        match.newUris.length > 0
+                                          ? t("create.updateExisting", { count: match.newUris.length })
+                                          : t("create.updateNothing")
+                                      }
+                                    />
+                                    <ModeOption
+                                      name={p.groupId}
+                                      checked={mode === "create"}
+                                      onChange={() => setMode("create")}
+                                      label={t("create.createNew", { visibility: t(isPublic ? "create.public" : "create.private") })}
+                                    />
+                                  </div>
+                                  <p className="text-xs text-areia">
+                                    {t("create.exists", { name: match.name })}{" "}
+                                    <a className="text-papel underline underline-offset-2" href={match.url} target="_blank" rel="noreferrer">
+                                      {t("create.viewOnSpotify")}
+                                    </a>
+                                    {match.matches > 1 && (
+                                      <span className="text-alerta"> {t("create.manyMatches", { count: match.matches })}</span>
+                                    )}
+                                  </p>
+                                </fieldset>
+                              ) : p.uris.length === 0 ? (
+                                <p className="text-xs text-erro">{t("create.willNotCreate")}</p>
+                              ) : (
+                                <p className="text-xs text-areia">
+                                  {t("create.newPlaylist", { visibility: t(isPublic ? "create.public" : "create.private") })}
+                                </p>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  ))}
               </>
             )}
 
@@ -698,7 +741,7 @@ export const CreatePlaylists = memo(function CreatePlaylists({
                   title={warnings.uncertain.length > 0 && !uncertainOk ? t("create.confirmUncertainTitle") : undefined}
                   onClick={run}
                 >
-                  {disabledReason ?? t("create.confirm")}
+                  {disabledReason ?? (summaryKind(chosen) === "update" ? planLabel(chosen, false) : t("create.confirm"))}
                 </button>
               </div>
             </footer>
