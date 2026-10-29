@@ -1,0 +1,42 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste values from `.env.local`, tokens or cookies.**
+        Many setup problems are covered on `http://127.0.0.1:3000/setup` (section "Erros comuns") and by `npm run doctor`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Select ...
+        2. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error shown on screen / terminal
+      description: The red box shows method, URL and status. Remove any personal data.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npm run doctor`
+      description: It never prints values, only ok / ERRO per check.
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: OS, Node version and browser
+      placeholder: Windows 11, Node 22, Chrome 141

@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+/* Warm, almost monochrome UI: color is reserved for genres (app/genre-colors.ts).
+   Every color is a token; the names come from the dark original and stay as roles:
+   cafe = page background, grafite = surface, grafite-2 = raised surface, fio = border,
+   papel = text (and filled buttons), areia = secondary text. The head script
+   (app/boot-script.ts) sets data-theme before the first paint; tests/contrast.test.ts checks
+   the pairs against WCAG AA. */
+:root {
+  color-scheme: dark;
+  --cafe: #1c1916;
+  --grafite: #27221e;
+  --grafite-2: #312a25;
+  --fio: #3e3631;
+  --papel: #f1eae1;
+  --areia: #b3a699;
+  --alerta: #f2a65a;
+  --erro: #ff8a7a;
+  --ok: #8fd6a3;
+  --sombra: #000000;
+  /* genre colors: oklch(--genre-l, chroma x --genre-c, hue) */
+  --genre-l: 0.8;
+  --genre-c: 1;
+  --genre-neutral-l: 0.72;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --cafe: #f6f1ea;
+  --grafite: #fffcf8;
+  --grafite-2: #ece4da;
+  --fio: #d9cec2;
+  --papel: #1f1a16;
+  --areia: #675a4e;
+  --alerta: #934a00;
+  --erro: #a8221b;
+  --ok: #1d6b36;
+  --sombra: #3b2f25;
+  --genre-l: 0.48;
+  --genre-c: 0.85;
+  --genre-neutral-l: 0.48;
+}
+
+@theme inline {
+  --color-cafe: var(--cafe);
+  --color-grafite: var(--grafite);
+  --color-grafite-2: var(--grafite-2);
+  --color-fio: var(--fio);
+  --color-papel: var(--papel);
+  --color-areia: var(--areia);
+  --color-alerta: var(--alerta);
+  --color-erro: var(--erro);
+  --color-ok: var(--ok);
+  --color-sombra: var(--sombra);
+}
+
+@theme {
+  --font-display: var(--font-archivo), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-atkinson), "Segoe UI", sans-serif;
+}
+
+/* native scrollbars, selects and dropdowns follow the theme through color-scheme */
+html {
+  scrollbar-color: var(--color-fio) transparent;
+  background: var(--color-cafe);
+}
+
+/* the server renders Portuguese: for another language the head script hides the page until
+   it has re-rendered (app/i18n.tsx), so the visitor never sees the switch */
+html[data-i18n-pending] body {
+  visibility: hidden;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--color-cafe);
+  color: var(--color-papel);
+  font-family: var(--font-sans);
+}
+
+/* the native list of the selects that stay (dynamic group lists) uses the app colors */
+select,
+option {
+  background-color: var(--color-cafe);
+  color: var(--color-papel);
+}
+
+::selection {
+  background: var(--color-papel);
+  color: var(--color-cafe);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-papel);
+  outline-offset: 2px;
+}
+
+/* Archivo's width axis: condensed numbers, expanded wordmark */
+.num {
+  font-family: var(--font-display);
+  font-stretch: 68%;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
+}
+
+.wide {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 800;
+}
+
+/* Tailwind 4's preflight leaves buttons with the arrow cursor; every clickable control gets the
+   hand, disabled ones get not-allowed. :where() keeps specificity at 0 so utilities still win. */
+@layer base {
+  :where(
+      button,
+      [role="button"],
+      [role="tab"],
+      summary,
+      select,
+      input[type="checkbox"],
+      input[type="radio"],
+      label:has(input[type="checkbox"], input[type="radio"]),
+      a:any-link
+    ) {
+    cursor: pointer;
+  }
+  :where(button, [role="button"], [role="tab"], select, input[type="checkbox"], input[type="radio"]):is(
+      :disabled,
+      [aria-disabled="true"]
+    ),
+  :where(label:has(input[type="checkbox"]:disabled, input[type="radio"]:disabled)) {
+    cursor: not-allowed;
+  }
+}
+
+/* 24px checkbox; --check sets the checked fill (genre color or paper) */
+.check {
+  appearance: none;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--color-areia);
+  border-radius: 0.375rem;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background-color 120ms, border-color 120ms;
+}
+.check::after {
+  content: "";
+  width: 0.7rem;
+  height: 0.4rem;
+  border: solid var(--color-cafe);
+  border-width: 0 0 3px 3px;
+  transform: translateY(-2px) rotate(-45deg) scale(0);
+  transition: transform 120ms;
+}
+.check:checked {
+  background: var(--check, var(--color-papel));
+  border-color: var(--check, var(--color-papel));
+}
+.check:checked::after {
+  transform: translateY(-2px) rotate(-45deg) scale(1);
+}
+.check:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* low-confidence share inside a composition bar */
+.hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-cafe) 0 2px,
+    transparent 2px 5px
+  );
+}
+
+/* unchecked spectrum band: stripes in the page color, so the state reads without color */
+.stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklch, var(--color-cafe) 55%, transparent) 0 3px,
+    transparent 3px 9px
+  );
+}
+
+.skeleton {
+  background: var(--color-grafite-2);
+  border-radius: 0.375rem;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* the one orchestrated moment: the library splits into its genres */
+.split-in {
+  transform-origin: left;
+  animation: split 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes split {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+.chevron {
+  transition: transform 150ms;
+}
+details[open] .chevron {
+  transform: rotate(90deg);
+}
+
+/* the dialog takes focus only to announce its title; its controls keep the ring */
+dialog:focus-visible {
+  outline: none;
+}
+dialog::backdrop {
+  background: color-mix(in srgb, var(--color-cafe) 80%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
