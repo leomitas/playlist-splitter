@@ -703,7 +703,18 @@ const GroupCard = memo(function GroupCard({
             value={name}
             onChange={(e) => dispatch({ type: "rename", groupId: g.id, name: e.target.value })}
             onClick={(e) => e.preventDefault()}
-            onKeyDown={(e) => e.key === " " && e.stopPropagation()}
+            // Inside <summary>: the browser toggles the card on Space keyup and Enter keydown
+            // even after stopPropagation, so those are cancelled (the text goes in on keydown)
+            onKeyDown={(e) => {
+              if ((e.key !== " " && e.key !== "Enter") || e.nativeEvent.isComposing) return;
+              e.stopPropagation();
+              if (e.key === "Enter") e.preventDefault();
+            }}
+            onKeyUp={(e) => {
+              if (e.key !== " ") return;
+              e.stopPropagation();
+              e.preventDefault();
+            }}
             aria-label={t("card.playlistName")}
           />
           {playlistTarget && <TargetBadge target={playlistTarget} />}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Genre list interactions with real keyboard/pointer sequences (user-event): spectrum bands.
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
@@ -214,5 +214,32 @@ describe("genre cards: checkboxes", () => {
     expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([false, false, true, false]);
     await user.click(screen.getByRole("button", { name: "Desfazer" }));
     expect(["Rock", "Pop", "Jazz", "Folk"].map(isChecked)).toEqual([true, true, true, true]);
+  });
+});
+
+describe("genre cards: rename", () => {
+  const cardOf = (input: HTMLElement) => input.closest("details") as HTMLDetailsElement;
+
+  it.each([false, true])("typing a multi-word name keeps the card as it was (open: %s)", async (open) => {
+    const user = userEvent.setup();
+    renderPreview();
+    const input = screen.getByDisplayValue("Rock");
+    cardOf(input).open = open;
+
+    await user.clear(input);
+    await user.type(input, "Classic Rock{Enter}{Escape}");
+
+    expect((screen.getByDisplayValue("Classic Rock") as HTMLInputElement).value).toBe("Classic Rock");
+    expect(cardOf(input).open).toBe(open);
+  });
+
+  // jsdom doesn't turn keys into summary clicks; browsers do unless the default is prevented
+  it("cancels the keys the summary would treat as a click, but not the text", () => {
+    renderPreview();
+    const input = screen.getByDisplayValue("Rock");
+    expect(fireEvent.keyUp(input, { key: " " })).toBe(false);
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+    // Space must still type: its keydown isn't cancelled
+    expect(fireEvent.keyDown(input, { key: " " })).toBe(true);
   });
 });
