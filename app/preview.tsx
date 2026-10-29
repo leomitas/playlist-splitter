@@ -16,6 +16,8 @@ import {
 import type { ConsensusStats } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
 import { buildExport } from "@/lib/export";
+import { findTargets, type GenreTargets } from "@/lib/existing-playlists";
+import { playlistName } from "@/lib/playlist-plan";
 import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
 import { loadSortBy, orderGroups, saveSortBy, SORT_OPTIONS, sortGroupIds, type SortBy } from "@/lib/group-order";
 import {
@@ -27,11 +29,13 @@ import {
   type Group,
   type PreviewState,
 } from "@/lib/preview-state";
-import { CreatePlaylists } from "./create-playlists";
+import type { Playlist } from "@/lib/spotify";
+import { CreatePlaylists, type CardTarget } from "./create-playlists";
 import { shownOn, useDragSelect } from "./use-drag-select";
 import { genreColor } from "./genre-colors";
 import { useI18n } from "./i18n";
 import { Segmented } from "./segmented";
+import { loadGenreTargets } from "./genre-targets";
 
 const noopSubscribe = () => () => {};
 // tracks shown per step inside an open group
@@ -91,6 +95,9 @@ type PreviewProps = {
   onSpotifyChanged: () => void;
   // bumped when the analysis or the country lookup finishes: the cards are sorted again
   reorderToken: number;
+  // the user's id and the session's playlist list (patched after writes): which genres already
+  // have a playlist. Missing while they load; the cards then show no badge.
+  account?: { myId: string; playlists: Playlist[] };
 };
 
 // Memoized: changes elsewhere on the page (playlist selection, analysis progress) skip it
@@ -110,6 +117,7 @@ function PreviewEditor({
   createDisabledReason,
   onSpotifyChanged,
   reorderToken,
+  account,
 }: PreviewProps) {
   const { t, rich, genre, groupName, locale } = useI18n();
   const fresh = useMemo(() => initialState(tracks), [tracks]);
@@ -177,6 +185,43 @@ function PreviewEditor({
         }),
     [optionsKey, groupName],
   );
+  // Genre -> playlist id saved by earlier runs; read again when the playlist list changes
+  // (it's patched after every write, when new ids were saved)
+  const [saved, setSaved] = useState<{ account: PreviewProps["account"]; targets: GenreTargets } | null>(null);
+  useEffect(() => {
+    if (!account) return;
+    let live = true;
+    void loadGenreTargets(account.myId).then((targets) => live && setSaved({ account, targets }));
+    return () => {
+      live = false;
+    };
+  }, [account]);
+  // Per group: update an existing playlist or create one, and the target's name. Only ids and
+  // names feed it, so checking boxes doesn't re-render the cards.
+  const targets = useMemo<Record<string, CardTarget> | null>(() => {
+    if (!account || saved?.account !== account) return null;
+    const groups = optionsKey
+      .split("\u0001")
+      .filter(Boolean)
+      .map((s) => {
+        const [id, name] = s.split("\u0000");
+        return { id, name };
+      });
+    const found = findTargets(groups, account.playlists, account.myId, saved.targets);
+    return Object.fromEntries(
+      groups.map((g) => {
+        const hit = found[g.id];
+        return [g.id, hit ? { update: true, name: hit.playlist.name } : { update: false, name: playlistName(g, genre) }];
+      }),
+    );
+  }, [optionsKey, account, saved, genre]);
+  const hasTargets = (update: boolean) => !!targets && Object.values(targets).some((x) => x.update === update);
+  // "Marcar existentes" / "Marcar novos": checks those, unchecks the rest
+  const checkTargets = (update: boolean) => {
+    if (!targets) return;
+    const on = Object.fromEntries(Object.entries(targets).map(([id, x]) => [id, x.update === update]));
+    include({ type: "restoreInclude", include: on });
+  };
   const autoMovedFamilies = useMemo(() => [...new Set(Object.values(state.autoMoved))], [state.autoMoved]);
 
   // summary, spectrum and the create plan lag a frame behind, so checkboxes respond first
@@ -342,6 +387,22 @@ function PreviewEditor({
               >
                 {t("preview.recommended")}
               </button>
+              <button
+                className={toolLink}
+                disabled={!hasTargets(true)}
+                onClick={() => checkTargets(true)}
+                title={t("preview.checkExistingTitle")}
+              >
+                {t("preview.checkExisting")}
+              </button>
+              <button
+                className={toolLink}
+                disabled={!hasTargets(false)}
+                onClick={() => checkTargets(false)}
+                title={t("preview.checkNewTitle")}
+              >
+                {t("preview.checkNew")}
+              </button>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -391,6 +452,7 @@ function PreviewEditor({
               byKey={byKey}
               autoMoved={state.autoMoved}
               autoMovedFamilies={g.id === OTHER ? autoMovedFamilies : NO_FAMILIES}
+              playlistTarget={targets?.[g.id]}
               dispatch={dispatch}
             />
           ))}
@@ -411,6 +473,7 @@ function PreviewEditor({
         groups={deferredGroups}
         tracks={byKey}
         disabledReason={createDisabledReason}
+        targets={targets}
         onDone={onSpotifyChanged}
       />
     </div>
@@ -551,6 +614,7 @@ const GroupCard = memo(function GroupCard({
   byKey,
   autoMoved,
   autoMovedFamilies,
+  playlistTarget,
   dispatch,
 }: {
   group: Group;
@@ -565,6 +629,8 @@ const GroupCard = memo(function GroupCard({
   byKey: Map<string, ClassifiedTrack>;
   autoMoved: Record<string, string>;
   autoMovedFamilies: string[];
+  // unknown while the playlist list loads
+  playlistTarget: CardTarget | undefined;
   dispatch: Dispatch<Action>;
 }) {
   const { t, n, genre, groupName } = useI18n();
@@ -640,6 +706,7 @@ const GroupCard = memo(function GroupCard({
             onKeyDown={(e) => e.key === " " && e.stopPropagation()}
             aria-label={t("card.playlistName")}
           />
+          {playlistTarget && <TargetBadge target={playlistTarget} />}
           <button
             type="button"
             className="flex-none rounded-full border border-fio px-2.5 py-0.5 text-xs text-areia transition-colors hover:border-areia hover:text-papel"
@@ -732,6 +799,21 @@ const GroupCard = memo(function GroupCard({
     </details>
   );
 });
+
+// Text plus style (filled vs dashed), not color alone; the tooltip names the target playlist
+function TargetBadge({ target }: { target: CardTarget }) {
+  const { t } = useI18n();
+  return (
+    <span
+      className={`flex-none rounded-full border px-2.5 py-0.5 text-xs font-bold ${
+        target.update ? "border-papel bg-papel text-cafe" : "border-dashed border-areia text-areia"
+      }`}
+      title={t(target.update ? "card.willUpdateTitle" : "card.newTitle", { name: target.name })}
+    >
+      {t(target.update ? "card.willUpdate" : "card.new")}
+    </span>
+  );
+}
 
 type Entry = { key: string; groupId: string };
 const NO_ENTRIES: Entry[] = [];

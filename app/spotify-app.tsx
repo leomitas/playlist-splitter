@@ -110,6 +110,12 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
   // drop selections that disappeared after "Atualizar lista"
   const chosen = useMemo(() => readable.filter((p) => selected.has(p.id)), [readable, selected]);
 
+  // the review marks genres that already have a playlist, from this same list (no extra reads)
+  const account = useMemo(
+    () => (me?.ok && playlists?.ok ? { myId: me.data.id, playlists: playlists.data } : undefined),
+    [me, playlists],
+  );
+
   // writes patched the session's playlist list, so this reads it back without a new listing
   const onSpotifyChanged = useCallback(() => refreshPlaylists(false), [refreshPlaylists]);
 
@@ -277,6 +283,7 @@ export function SpotifyApp({ logout }: { logout: React.ReactNode }) {
               createDisabledReason={block.reason ?? (busy ? t("app.waitAnalysis") : undefined)}
               onSpotifyChanged={onSpotifyChanged}
               reorderToken={reorderToken}
+              account={account}
             />
           ) : active ? (
             <SpectrumSkeleton text={t("app.readingFirst")} />
