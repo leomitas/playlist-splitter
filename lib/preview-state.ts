@@ -213,6 +213,11 @@ export function customGroupId(name: string, groups: Group[]) {
 // Groups checked by default and by "Marcar recomendados"
 export const isRecommended = (g: Pick<Group, "id">) => !UNCERTAIN_FAMILIES.has(g.id);
 
+// Groups emptied by the sync (e.g. every uncertain funk track got a country) or by moves stay in
+// the state, so a returning track finds its name and choice again, but are hidden, left out of
+// the counts and never created; bulk checks leave them alone
+export const hasTracks = (g: Pick<Group, "trackKeys">) => g.trackKeys.length > 0;
+
 // Sets include per group; untouched groups keep their identity (memoized cards)
 function withInclude(state: PreviewState, next: (g: Group) => boolean): PreviewState {
   let changed = false;
@@ -232,7 +237,7 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
 
     case "setInclude": {
       const ids = action.groupIds === "all" ? null : new Set(action.groupIds);
-      return withInclude(state, (g) => (!ids || ids.has(g.id) ? action.on : g.include));
+      return withInclude(state, (g) => ((ids ? ids.has(g.id) : hasTracks(g)) ? action.on : g.include));
     }
 
     case "invertInclude": {
@@ -241,7 +246,7 @@ export function reducer(state: PreviewState, action: Action): PreviewState {
     }
 
     case "includeRecommended":
-      return withInclude(state, isRecommended);
+      return withInclude(state, (g) => (hasTracks(g) ? isRecommended(g) : g.include));
 
     case "onlyThis":
       return withInclude(state, (g) => g.id === action.groupId);

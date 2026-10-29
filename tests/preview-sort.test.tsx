@@ -34,13 +34,13 @@ describe("preview sort", () => {
         reorderToken={0}
       />,
     );
-    expect(cardNames()).toEqual(["Pop", "Jazz", "Rock", "Outros"]);
+    expect(cardNames()).toEqual(["Pop", "Jazz", "Rock"]);
 
     const group = screen.getByRole("radiogroup", { name: "Ordenar por" });
     expect(within(group).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Tamanho", "Nome", "A revisar"]);
     await user.click(within(group).getByRole("radio", { name: "Nome" }));
 
-    expect(cardNames()).toEqual(["Jazz", "Pop", "Rock", "Outros"]);
+    expect(cardNames()).toEqual(["Jazz", "Pop", "Rock"]);
     expect(localStorage.getItem("preview-sort")).toBe("name");
   });
 });

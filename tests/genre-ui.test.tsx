@@ -4,7 +4,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
+import { FUNK_UNCERTAIN } from "@/lib/genre-families";
 import { Preview } from "@/app/preview";
 import { many } from "./helpers";
 
@@ -127,11 +127,10 @@ describe("genre cards: checkboxes", () => {
 
   it("recommended genres start checked; Funk (incerto) doesn't", () => {
     renderPreview();
-    // "Outros" always exists (empty here) so tracks can be moved to it
-    expect(cardOrder()).toEqual(["Rock", "Pop", "Jazz", "Folk", FUNK_UNCERTAIN, OTHER]);
+    // "Outros" exists in the state (empty here) so tracks can be moved to it, but has no card
+    expect(cardOrder()).toEqual(["Rock", "Pop", "Jazz", "Folk", FUNK_UNCERTAIN]);
     expect(["Rock", "Pop", "Jazz", "Folk"].every(isChecked)).toBe(true);
     expect(isChecked(FUNK_UNCERTAIN)).toBe(false);
-    expect(isChecked(OTHER)).toBe(false);
   });
 
   it("Shift+click checks/unchecks the range in the order shown", async () => {
@@ -150,8 +149,8 @@ describe("genre cards: checkboxes", () => {
     renderPreview();
     await user.click(screen.getByRole("button", { name: "Limpar" }));
     await user.type(screen.getByRole("searchbox", { name: "Buscar gênero pelo nome" }), "o");
-    // "o" matches Rock, Pop, Folk, Funk (incerto) and Outros; Jazz is hidden
-    expect(cardOrder()).toEqual(["Rock", "Pop", "Folk", FUNK_UNCERTAIN, OTHER]);
+    // "o" matches Rock, Pop, Folk and Funk (incerto) (the empty Outros has no card); Jazz is hidden
+    expect(cardOrder()).toEqual(["Rock", "Pop", "Folk", FUNK_UNCERTAIN]);
     await user.click(hit("Rock"));
     await user.keyboard("{Shift>}");
     await user.click(hit("Folk"));

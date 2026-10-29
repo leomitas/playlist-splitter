@@ -21,6 +21,7 @@ import { playlistName } from "@/lib/playlist-plan";
 import { FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
 import { loadSortBy, orderGroups, saveSortBy, SORT_OPTIONS, sortGroupIds, type SortBy } from "@/lib/group-order";
 import {
+  hasTracks,
   initialState,
   pendingSync,
   reducer,
@@ -139,9 +140,10 @@ function PreviewEditor({
   // genre search filters the cards (and what "Inverter" acts on)
   const [genreQuery, setGenreQuery] = useState("");
   const deferredGenreQuery = useDeferredValue(genreQuery);
+  // empty groups are hidden (lib/preview-state.ts: hasTracks)
   const visibleGroups = useMemo(() => {
     const q = fold(deferredGenreQuery);
-    return q ? orderedGroups.filter((g) => fold(groupName(g)).includes(q)) : orderedGroups;
+    return orderedGroups.filter((g) => hasTracks(g) && (!q || fold(groupName(g)).includes(q)));
   }, [orderedGroups, deferredGenreQuery, groupName]);
   // "Expandir/Recolher todos": every card follows when n changes
   const [expand, setExpand] = useState({ open: false, n: 0 });
@@ -172,18 +174,26 @@ function PreviewEditor({
     return () => window.removeEventListener("pagehide", flush);
   }, [storageKey]);
 
-  // only ids and names: toggling or moving tracks doesn't change it, so cards stay memoized
-  const optionsKey = state.groups.map((g) => `${g.id}\u0000${g.name}`).join("\u0001");
-  const groupOptions = useMemo<GroupOption[]>(
+  // only ids, names and emptiness: toggling or moving tracks doesn't change it, so cards stay memoized
+  const optionsKey = state.groups.map((g) => `${g.id}\u0000${g.name}\u0000${hasTracks(g) ? 1 : 0}`).join("\u0001");
+  const namedGroups = useMemo(
     () =>
       optionsKey
         .split("\u0001")
         .filter(Boolean)
         .map((s) => {
-          const [id, name] = s.split("\u0000");
-          return { id, name: groupName({ id, name }) };
+          const [id, name, full] = s.split("\u0000");
+          return { id, name, empty: full === "0" };
         }),
-    [optionsKey, groupName],
+    [optionsKey],
+  );
+  // move/merge targets: empty groups are gone, except "Outros", always there to receive tracks
+  const groupOptions = useMemo<GroupOption[]>(
+    () =>
+      namedGroups
+        .filter((g) => !g.empty || g.id === OTHER)
+        .map(({ id, name }) => ({ id, name: groupName({ id, name }) })),
+    [namedGroups, groupName],
   );
   // Genre -> playlist id saved by earlier runs; read again when the playlist list changes
   // (it's patched after every write, when new ids were saved)
@@ -200,13 +210,7 @@ function PreviewEditor({
   // names feed it, so checking boxes doesn't re-render the cards.
   const targets = useMemo<Record<string, CardTarget> | null>(() => {
     if (!account || saved?.account !== account) return null;
-    const groups = optionsKey
-      .split("\u0001")
-      .filter(Boolean)
-      .map((s) => {
-        const [id, name] = s.split("\u0000");
-        return { id, name };
-      });
+    const groups = namedGroups.filter((g) => !g.empty);
     const found = findTargets(groups, account.playlists, account.myId, saved.targets);
     return Object.fromEntries(
       groups.map((g) => {
@@ -214,7 +218,7 @@ function PreviewEditor({
         return [g.id, hit ? { update: true, name: hit.playlist.name } : { update: false, name: playlistName(g, genre) }];
       }),
     );
-  }, [optionsKey, account, saved, genre]);
+  }, [namedGroups, account, saved, genre]);
   const hasTargets = (update: boolean) => !!targets && Object.values(targets).some((x) => x.update === update);
   // "Marcar existentes" / "Marcar novos": checks those, unchecks the rest
   const checkTargets = (update: boolean) => {
@@ -228,8 +232,9 @@ function PreviewEditor({
   const deferredGroups = useDeferredValue(state.groups);
   // what the footer will create: checked groups and their tracks
   const marked = useMemo(() => {
-    const on = deferredGroups.filter((g) => g.include);
-    return { groups: on.length, tracks: on.reduce((n, g) => n + g.trackKeys.length, 0) };
+    const shown = deferredGroups.filter(hasTracks);
+    const on = shown.filter((g) => g.include);
+    return { groups: on.length, total: shown.length, tracks: on.reduce((n, g) => n + g.trackKeys.length, 0) };
   }, [deferredGroups]);
 
   // checked state without the deferral, for controls that must answer on the click itself
@@ -361,7 +366,7 @@ function PreviewEditor({
             <p className="font-bold" aria-live="polite">
               {rich(
                 "preview.marked",
-                { marked: marked.groups, total: deferredGroups.length, tracks: t("common.tracks", { count: marked.tracks }) },
+                { marked: marked.groups, total: marked.total, tracks: t("common.tracks", { count: marked.tracks }) },
                 { muted: (c) => <span className="font-normal text-areia">{c}</span> },
               )}
             </p>

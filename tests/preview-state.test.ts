@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applyArtistConsensus } from "@/lib/artist-consensus";
 import type { ClassifiedTrack } from "@/lib/classify";
-import { OTHER } from "@/lib/genre-families";
-import { initialState, pendingSync, reducer, upgradeSaved, type PreviewState } from "@/lib/preview-state";
+import { FUNK_BR, FUNK_UNCERTAIN, OTHER } from "@/lib/genre-families";
+import { planPlaylists } from "@/lib/playlist-plan";
+import { hasTracks, initialState, pendingSync, reducer, upgradeSaved, type PreviewState } from "@/lib/preview-state";
 import { many, track } from "./helpers";
 
 const groupOf = (s: PreviewState, key: string) => s.groups.find((g) => g.trackKeys.includes(key))?.id;
@@ -89,5 +90,41 @@ describe("bulk review actions", () => {
     expect(ids).toContain("custom:Rock 2");
     // "Outros" stays last
     expect(ids.at(-1)).toBe(OTHER);
+  });
+});
+
+describe("empty groups", () => {
+  // the country lookup resolved every uncertain funk track: the group stays, with no tracks
+  function resolvedFunk() {
+    const funk = many(3, { artist: "MC", family: FUNK_UNCERTAIN });
+    const tracks = [...many(3, { artist: "R", family: "Rock" }), ...funk];
+    const before = initialState(tracks);
+    // as applyCountries does: the tag family stays in baseFamily
+    const resolved = tracks.map((t) => (funk.includes(t) ? { ...t, baseFamily: FUNK_UNCERTAIN, family: FUNK_BR } : t));
+    const after = reducer(before, { type: "sync", tracks: resolved });
+    return { before, after, tracks: resolved };
+  }
+
+  it("a fully resolved funk analysis leaves Funk (incerto) empty, never with tracks", () => {
+    const { before, after } = resolvedFunk();
+    expect(before.groups.find((g) => g.id === FUNK_UNCERTAIN)?.trackKeys).toHaveLength(3);
+    expect(after.groups.find((g) => g.id === FUNK_UNCERTAIN)?.trackKeys ?? []).toHaveLength(0);
+    expect(after.groups.find((g) => g.id === FUNK_BR)?.trackKeys).toHaveLength(3);
+  });
+
+  it("bulk checks leave empty groups alone", () => {
+    const { after } = resolvedFunk();
+    const all = reducer(after, { type: "setInclude", groupIds: "all", on: true });
+    expect(all.groups.filter((g) => !hasTracks(g)).map((g) => g.include)).toEqual([false, false]);
+    const rec = reducer(after, { type: "includeRecommended" });
+    expect(rec.groups.filter((g) => !hasTracks(g)).every((g) => !g.include)).toBe(true);
+  });
+
+  it("the creation plan never has an empty group, even a checked one", () => {
+    const { after, tracks } = resolvedFunk();
+    const checked = { ...after, groups: after.groups.map((g) => ({ ...g, include: true })) };
+    const plan = planPlaylists(checked.groups, new Map(tracks.map((t) => [t.key, t])));
+    expect(plan.map((p) => p.groupId).sort()).toEqual([FUNK_BR, "Rock"].sort());
+    expect(plan.every((p) => p.uris.length > 0)).toBe(true);
   });
 });

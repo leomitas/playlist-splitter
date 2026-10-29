@@ -162,7 +162,12 @@ describe("language: store and toggle", () => {
 });
 
 describe("genre names in the preview", () => {
-  const tracks = [...many(4, { artist: "R", family: "Rock" }), ...many(3, { artist: "M", family: FUNK_UNCERTAIN })];
+  // "Outros" needs tracks to be shown (empty groups are hidden)
+  const tracks = [
+    ...many(4, { artist: "R", family: "Rock" }),
+    ...many(3, { artist: "M", family: FUNK_UNCERTAIN }),
+    ...many(2, { artist: "X", family: OTHER }),
+  ];
   const names = () => screen.getAllByRole("textbox", { name: /Nome da playlist|Playlist name/ }).map((i) => (i as HTMLInputElement).value);
 
   it("shows translated family names, keeps renamed groups and the stored ids", async () => {
