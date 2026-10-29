@@ -33,10 +33,10 @@ npm run build
 app/                     Next.js App Router (UI in English and pt-BR)
   page.tsx               login screen / main app
   spotify-app.tsx        main screen: playlist picker, analysis, preview
-  analysis-queue.ts      background analysis and "Sincronizar curtidas"
+  analysis-queue.ts      background analysis and "Sync liked songs"
   preview.tsx            genre groups, quick review, export
   create-playlists.tsx   confirmation and creation of playlists
-  setup/                 /setup guide and "Testar configuração"
+  setup/                 /setup guide and "Test configuration"
   actions.ts             server actions: one Spotify request each
   api/                   Auth.js route and Last.fm proxy
   i18n.tsx               useI18n(): t(), plurals, numbers and genre names
@@ -65,7 +65,7 @@ Important decisions are documented in `CLAUDE.md` (for example why the auth rout
 3. New family? Add the key there and, optionally, a color in `app/genre-colors.ts`.
    - Funk is special: Brazilian funk tags belong to **Funk BR**, while the bare tag `funk` is never mapped (it's shared by funk carioca and American funk). Its family comes from the artist's country, looked up on MusicBrainz (Brazil → Funk BR, elsewhere → **Funk Internacional**, unknown → Funk (incerto)) (`lib/musicbrainz.ts`, `lib/country.ts`; 1 request per second, cached). Add Brazilian variations to Funk BR; don't map `funk` itself.
 4. Run `npm test`: `tests/classify.test.ts` checks that every tag is lowercase and in a single family. Add a case if your mapping fixes a real misclassification.
-5. In the PR, list a few example artists and where they ended up before ("Outros") and after.
+5. In the PR, list a few example artists and where they ended up before ("Other") and after.
 
 ## Commits and pull requests
 
