@@ -11,11 +11,14 @@ export type PlannedPlaylist = {
   ignored: number;
 };
 
+export const NAME_SUFFIX = " (Playlist Splitter)";
+
 // Unedited groups (name still equals the family id) get the family's display name (`label`,
 // translated by the UI) and the default suffix
-export function playlistName(group: Group, label: (familyId: string) => string = (id) => id) {
-  const name = group.name.trim();
-  return name === group.id || name === "" ? `${label(group.id)} (Playlist Splitter)` : name;
+export const isUnnamed = (group: Pick<Group, "id" | "name">) => group.name.trim() === group.id || group.name.trim() === "";
+
+export function playlistName(group: Pick<Group, "id" | "name">, label: (familyId: string) => string = (id) => id) {
+  return isUnnamed(group) ? `${label(group.id)}${NAME_SUFFIX}` : group.name.trim();
 }
 
 export function planPlaylists(
