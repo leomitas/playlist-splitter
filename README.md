@@ -9,8 +9,7 @@ Split the songs of your Spotify playlists (and liked songs) by genre and create 
 <!-- GIF: analysis → genre spectrum → create playlists. Save as docs/media/demo.gif and use: ![Demo](docs/media/demo.gif) -->
 **Demo GIF:** coming soon.
 
-<!-- Video: 2-minute walkthrough of setup and first run. Replace with the link. -->
-**Video:** walkthrough coming soon.
+**Video:** [2-minute walkthrough of setup and first run](https://youtu.be/CVqxI0cqT0M)
 
 ## Features
 

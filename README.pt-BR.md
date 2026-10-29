@@ -9,8 +9,7 @@ Separa as músicas das suas playlists do Spotify (e das curtidas) por gênero e 
 <!-- GIF: análise → espectro de gêneros → criar playlists. Salve em docs/media/demo.gif e use: ![Demonstração](docs/media/demo.gif) -->
 **GIF de demonstração:** em breve.
 
-<!-- Vídeo: 2 minutos mostrando a configuração e o primeiro uso. Troque pelo link. -->
-**Vídeo:** passo a passo em breve.
+**Vídeo:** [passo a passo de 2 minutos: configuração e primeiro uso](https://youtu.be/CVqxI0cqT0M)
 
 ## Recursos
 

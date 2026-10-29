@@ -41,6 +41,7 @@ app/page.tsx                 login / app
 app/spotify-app.tsx          tela principal: playlists, análise, prévia, faixa de bloqueio
 app/analysis-queue.ts        análise em segundo plano, "Sincronizar curtidas", reanálise completa
 app/spotify-data.ts          leitores com cache (lista da sessão, faixas por snapshot, playlists criadas)
+app/genre-targets.ts         gênero -> id da playlist por conta (IndexedDB "state", sobrevive ao "Limpar cache")
 app/preview.tsx              grupos, revisão rápida (busca, filtros, lote), export JSON
 app/create-playlists.tsx     confirmação e criação/atualização de playlists
 app/setup/                   guia /setup (texto em guide.tsx) e "Testar configuração" (server action, só fora de produção)
@@ -54,6 +55,7 @@ lib/classify.ts              família por faixa, checagem de coerência
 lib/artist-consensus.ts      consenso por artista
 lib/musicbrainz.ts           busca e regra de casamento (score >= 90, nome/alias exato)
 lib/country.ts               aplica o país às faixas com a tag genérica "funk"
+lib/existing-playlists.ts    grupo -> playlist já criada pelo app (id salvo; senão nome em qualquer idioma), sem ler o Spotify
 lib/dedupe.ts                duplicatas por ID e por artista + título idênticos
 lib/preview-state.ts         reducer da prévia (movimentos manuais, sync com o consenso)
 lib/request-queue.ts         fila, retries e bloqueio por cota (lib/quota-block.ts)
@@ -97,8 +99,9 @@ scripts/                     setup-env.mjs, doctor.mjs
 ## Status
 
 - **Pronto:** login; análise de playlists e curtidas em segundo plano com cache; classificação por gênero (Last.fm + consenso por artista); prévia com revisão rápida e export JSON; criação/atualização de playlists com progresso; bloqueio por cota; sincronização incremental das curtidas; `/setup`, `setup:env`, `doctor`; estrutura open source (README en/pt-BR, CONTRIBUTING, CoC, SECURITY, templates, CI, Dependabot).
-- **Falta / próximos:** gravar GIF e vídeos (placeholders no README e em `app/setup/videos.ts`); reformatar o código com Prettier num commit único e ligar `format:check` no CI; detectar descurtidas sem reanálise completa; importar o arquivo de dados do Spotify (ver `docs/good-first-issues.md`).
-- **Sem teste com a API real:** criação/atualização de playlists com o cache de criadas, sincronização de curtidas, bloqueio por 429 real, "Testar configuração" contra Spotify/Last.fm, consultas reais ao MusicBrainz, latência de clique no navegador.
+- **Falta / próximos:** colocar o GIF no README (`docs/media/demo.gif`; o vídeo do README já tem link) e os vídeos do `/setup` (placeholders em `app/setup/videos.ts`); reformatar o código com Prettier num commit único e ligar `format:check` no CI; detectar descurtidas sem reanálise completa; importar o arquivo de dados do Spotify (ver `docs/good-first-issues.md`).
+- **Testado à mão com a API real:** criação e atualização de playlists; sincronização de curtidas.
+- **Sem teste com a API real:** bloqueio por 429 real, "Testar configuração" contra Spotify/Last.fm, consultas reais ao MusicBrainz, latência de clique no navegador.
 
 ### Tema e idioma
 

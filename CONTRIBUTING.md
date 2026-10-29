@@ -30,7 +30,7 @@ npm run build
 ## Folder structure
 
 ```
-app/                     Next.js App Router (UI is in pt-BR)
+app/                     Next.js App Router (UI in English and pt-BR)
   page.tsx               login screen / main app
   spotify-app.tsx        main screen: playlist picker, analysis, preview
   analysis-queue.ts      background analysis and "Sincronizar curtidas"
@@ -39,7 +39,9 @@ app/                     Next.js App Router (UI is in pt-BR)
   setup/                 /setup guide and "Testar configuração"
   actions.ts             server actions: one Spotify request each
   api/                   Auth.js route and Last.fm proxy
+  i18n.tsx               useI18n(): t(), plurals, numbers and genre names
 lib/                     logic without UI (most of it unit-tested)
+  i18n/                  dictionaries: pt-BR.ts defines the keys, en.ts is typed against them
   genre-families.ts      Last.fm tag -> genre family map
   classify.ts            family choice per track, coherence check
   artist-consensus.ts    family by artist consensus
@@ -69,7 +71,8 @@ Important decisions are documented in `CLAUDE.md` (for example why the auth rout
 
 - Commit messages in English, short and imperative: `Add phonk tags`, `Fix liked songs sync after unlike`.
 - One topic per PR; describe what and why, and how you tested. Fill in the PR checklist.
-- UI text in Portuguese (pt-BR); code, comments and commits in English.
+- The UI is in English and Portuguese (pt-BR). Visible text never goes straight into `app/`: add a key to `lib/i18n/pt-BR.ts` and its translation to `lib/i18n/en.ts`, then use `t()` from `useI18n()`. `tests/no-hardcoded-text.test.ts` fails on hardcoded text.
+- Code, comments and commits in English.
 - Never commit `.env.local`, tokens or screenshots showing them.
 - Keep clicks instant: heavy work goes off the click path (`useDeferredValue`, memoized rows, lists rendered on demand).
 
