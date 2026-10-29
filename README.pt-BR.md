@@ -15,7 +15,7 @@ Separa as músicas das suas playlists do Spotify (e das curtidas) por gênero e 
 1. **Entre com o Spotify** usando o seu próprio app do Spotify (veja [Limites do Spotify](#limites-do-spotify-leia-primeiro)).
 2. **Escolha as playlists** (e as curtidas). A análise roda em segundo plano; os gêneros vêm das tags do Last.fm.
 3. **Revise:** um espectro de gêneros de tudo que você escolheu. Renomeie, junte ou mova faixas, confira as marcadas como baixa confiança e escolha quais gêneros criar.
-4. **Confirme.** Gêneros novos viram playlists privadas novas, com nomes como `Rock (Playlist Splitter)`. Gêneros que já têm uma playlist são **atualizados**: só entram faixas novas, nada é removido nem reordenado.
+4. **Confirme.** Gêneros novos viram playlists novas (privadas por padrão; **Tornar públicas as playlists novas**, na confirmação, muda isso), com nomes como `Rock (Playlist Splitter)`. Gêneros que já têm uma playlist são **atualizados**: só entram faixas novas, nada é removido nem reordenado.
 
 Rode de novo sempre que a sua biblioteca mudar: as playlists que o app criou são reconhecidas (selo **Atualizar**; **Nova** quer dizer que uma playlist será criada) e atualizadas em vez de duplicadas.
 
@@ -55,7 +55,7 @@ npm run setup:env   # cria o .env.local (nunca sobrescreve) e gera o AUTH_SECRET
 npm run dev
 ```
 
-Abra **http://127.0.0.1:3000/setup** (sempre `127.0.0.1`, nunca `localhost`) e siga os seis passos: criar o app no Spotify, cadastrar seu e-mail, pegar a chave do Last.fm, preencher o `.env.local` e reiniciar. Depois, `npm run doctor` confere a configuração sem mostrar nenhum valor.
+Abra **http://127.0.0.1:3000/setup** (sempre `127.0.0.1`, nunca `localhost`) e siga os seis passos: confirmar o Spotify Premium, criar o app no Spotify, cadastrar seu e-mail, pegar a chave do Last.fm, preencher o `.env.local` e reiniciar. Depois, `npm run doctor` confere a configuração sem mostrar nenhum valor.
 
 Para uma experiência mais fluida (sem o selo do modo dev, páginas mais rápidas), dá para rodar a versão de produção no lugar do `npm run dev`: `npm run build && npm start`. Pare o servidor antes de fazer o build de novo.
 
@@ -89,7 +89,7 @@ As tags são feitas pela comunidade, então algumas faixas vão cair na família
 - **Sem banco de dados e sem contas.** A sessão fica num cookie criptografado; o que o app lê do Spotify fica em cache no seu navegador (IndexedDB) e não sai de lá. **Limpar cache** apaga tudo.
 - Nomes de faixas e artistas são enviados ao **Last.fm** (e nomes de artistas ao **MusicBrainz**, só para a tag genérica "funk") para buscar tags e países, pelas rotas do próprio app na sua máquina.
 - O Client Secret do Spotify, a chave do Last.fm e o `AUTH_SECRET` ficam no `.env.local`, que nunca é commitado. Nunca cole esses valores em issues ou capturas de tela.
-- O app pede ao Spotify só as permissões de que precisa: ler suas playlists e curtidas, e criar ou editar playlists.
+- O app pede ao Spotify só as permissões de que precisa: ler suas playlists e curtidas, criar ou editar playlists e ler o e-mail da sua conta (`user-read-email`).
 
 ## Solução de problemas
 

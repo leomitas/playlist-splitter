@@ -15,7 +15,7 @@ Split the songs of your Spotify playlists (and liked songs) by genre and create 
 1. **Log in with Spotify** using your own Spotify app (see [Spotify limits](#spotify-limits-read-this-first)).
 2. **Pick playlists** (and your liked songs). The analysis runs in the background; genres come from Last.fm tags.
 3. **Review:** a genre spectrum of everything you picked. Rename, merge or move tracks, check the ones flagged as low confidence, and choose which genres to create.
-4. **Confirm.** New genres become new private playlists named like `Rock (Playlist Splitter)`. Genres that already have one are **updated**: only new tracks are appended, nothing is removed or reordered.
+4. **Confirm.** New genres become new playlists (private by default; **Make the new playlists public** in the confirmation changes that) named like `Rock (Playlist Splitter)`. Genres that already have one are **updated**: only new tracks are appended, nothing is removed or reordered.
 
 Run it again whenever your library changes: playlists the app made are recognized (card badge **Will update**; **New** means a playlist will be created) and updated instead of duplicated.
 
@@ -55,7 +55,7 @@ npm run setup:env   # creates .env.local (never overwrites) and generates AUTH_S
 npm run dev
 ```
 
-Open **http://127.0.0.1:3000/setup** (always `127.0.0.1`, never `localhost`) and follow the six steps: create the Spotify app, register your e-mail, get a Last.fm key, fill `.env.local`, restart. Then `npm run doctor` checks the configuration without printing any value.
+Open **http://127.0.0.1:3000/setup** (always `127.0.0.1`, never `localhost`) and follow the six steps: confirm Spotify Premium, create the Spotify app, register your e-mail, get a Last.fm key, fill `.env.local`, restart. Then `npm run doctor` checks the configuration without printing any value.
 
 For a smoother experience (no dev badge, faster pages) you can run a production build instead of `npm run dev`: `npm run build && npm start`. Stop the server before building again.
 
@@ -89,7 +89,7 @@ Tags are crowd-sourced, so some tracks will land in the wrong family or in **Oth
 - **No database and no accounts.** The session lives in an encrypted cookie; what the app reads from Spotify is cached in your browser (IndexedDB) and stays there. **Clear cache** erases it.
 - Track and artist names are sent to **Last.fm** (and artist names to **MusicBrainz**, only for the generic "funk" tag) to look up tags and countries, through the app's own server routes on your machine.
 - Your Spotify Client Secret, Last.fm key and `AUTH_SECRET` live in `.env.local`, which is never committed. Never paste them in issues or screenshots.
-- The app asks Spotify only for the permissions it needs: read your playlists and liked songs, and create or edit playlists.
+- The app asks Spotify only for the permissions it needs: read your playlists and liked songs, create or edit playlists, and read your account's e-mail (`user-read-email`).
 
 ## Troubleshooting
 
