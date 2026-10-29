@@ -6,7 +6,7 @@ Only the latest commit on `main` is supported.
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue**. Report privately through GitHub: **Security > Report a vulnerability** on this repository ([direct link](https://github.com/leomitas/testclaude/security/advisories/new)).
+Please **do not open a public issue**. Report privately through GitHub: **Security > Report a vulnerability** on this repository ([direct link](https://github.com/leomitas/playlist-splitter/security/advisories/new)).
 
 Include what's affected, how to reproduce it and the impact. You can expect a first answer within 7 days.
 

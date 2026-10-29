@@ -63,7 +63,7 @@ describe("lookupCountry (fetch mocked)", () => {
     expect(decodeURIComponent(url)).toContain('query=artist:"MC \\"K\\""');
     expect(url).toContain("fmt=json&limit=3");
     expect((init!.headers as Record<string, string>)["User-Agent"]).toBe(MB_USER_AGENT);
-    expect(MB_USER_AGENT).toContain("https://github.com/leomitas/testclaude");
+    expect(MB_USER_AGENT).toContain("https://github.com/leomitas/playlist-splitter");
   });
 
   it("a 503 (MusicBrainz rate limit) is an error for the queue to retry", async () => {

@@ -5,7 +5,7 @@
 import type { ApiResult } from "@/lib/spotify";
 
 const API = "https://musicbrainz.org/ws/2/artist";
-export const MB_USER_AGENT = "PlaylistSplitter/0.1 ( https://github.com/leomitas/testclaude )";
+export const MB_USER_AGENT = "PlaylistSplitter/0.1 ( https://github.com/leomitas/playlist-splitter )";
 export const MB_INTERVAL_MS = 1000;
 export const MIN_SCORE = 90;
 
