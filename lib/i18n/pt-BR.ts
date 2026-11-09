@@ -157,7 +157,7 @@ export const pt = {
   "analysis.progress": "Progresso da análise",
   "analysis.resumeBlocked": "Retomar (bloqueado)",
   "analysis.rulesChanged":
-    "<b>As regras de gênero mudaram desde esta análise</b> (Funk BR e Funk Internacional). Analise as mesmas playlists de novo para aplicar: as tags vêm do cache do Last.fm e as faixas só são lidas de novo no Spotify se a playlist mudou.",
+    "<b>As regras de gênero mudaram desde esta análise</b> (nova família Indie Rock). Analise as mesmas playlists de novo para aplicar: as tags vêm do cache do Last.fm e as faixas só são lidas de novo no Spotify se a playlist mudou.",
   "analysis.failed": { one: "{count} de {total} playlist com erro", other: "{count} de {total} playlists com erro" },
   "analysis.failures": { one: "{count} falha", other: "{count} falhas" },
   "analysis.skipped": { one: "{count} faixa pulada por erro do Spotify", other: "{count} faixas puladas por erro do Spotify" },
@@ -480,4 +480,5 @@ export const pt = {
   "genre.Funk (incerto)": "Funk (incerto)",
   "genre.Funk Internacional": "Funk Internacional",
   "genre.Eletrônica": "Eletrônica",
+  "genre.Indie Rock": "Indie Rock",
 } satisfies Record<string, Entry>;

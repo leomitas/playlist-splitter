@@ -18,6 +18,7 @@ export const GENRE_HUES: Record<string, [hue: number, chroma: number]> = {
   "Pagode/Samba": [130, 0.14],
   MPB: [150, 0.13],
   Indie: [175, 0.11],
+  "Indie Rock": [185, 0.13],
   "Lo-fi/Bedroom": [195, 0.08],
   "Eletrônica": [215, 0.12],
   Jazz: [250, 0.11],

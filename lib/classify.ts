@@ -33,7 +33,7 @@ export type ClassifiedTrack = {
 };
 
 // Bump when classification rules change, so saved analyses can be flagged as outdated
-export const CLASSIFIER_VERSION = 3;
+export const CLASSIFIER_VERSION = 4;
 
 // Low-confidence reasons are stable codes; the UI translates them
 export const LOW_INCOHERENT = "incoherent-tags";

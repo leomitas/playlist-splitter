@@ -20,9 +20,10 @@ export const GENRE_FAMILIES: Record<string, string[]> = {
     "art rock", "shoegaze", "dream pop", "noise rock", "math rock",
   ],
   Indie: [
-    "indie", "indie rock", "indie pop", "indie folk", "indietronica", "indie pop rock",
-    "twee pop", "jangle pop", "slowcore", "sadcore", "midwest emo", "emo", "art pop",
+    "indie", "indie pop", "indie folk", "indietronica", "indie pop rock", "twee pop", "emo",
+    "art pop",
   ],
+  "Indie Rock": ["indie rock", "jangle pop", "midwest emo", "slowcore", "sadcore"],
   Pop: [
     "pop", "dance pop", "electropop", "synthpop", "synth-pop", "teen pop", "k-pop", "j-pop",
     "c-pop", "latin pop", "pop latino", "power pop", "hyperpop", "chamber pop", "baroque pop",

@@ -49,6 +49,13 @@ describe("classifyTrack", () => {
     expect(classify(null, tags(["rock", 90])).family).toBe("Rock");
   });
 
+  it("splits indie rock from the other indie tags", () => {
+    expect(classify(tags(["indie rock", 100], ["indie", 60])).family).toBe("Indie Rock");
+    expect(classify(tags(["indie pop", 100], ["indie rock", 40])).family).toBe("Indie");
+    expect(TAG_TO_FAMILY.get("midwest emo")).toBe("Indie Rock");
+    expect(TAG_TO_FAMILY.get("emo")).toBe("Indie");
+  });
+
   it("ties go to the family that appeared first (artist tags first)", () => {
     expect(classify(tags(["mpb", 50], ["samba", 50])).family).toBe("MPB");
   });

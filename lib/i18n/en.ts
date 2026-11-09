@@ -155,7 +155,7 @@ export const en: Dict = {
   "analysis.progress": "Analysis progress",
   "analysis.resumeBlocked": "Resume (blocked)",
   "analysis.rulesChanged":
-    "<b>The genre rules changed since this analysis</b> (Funk BR and International Funk). Analyze the same playlists again to apply them: tags come from the Last.fm cache and tracks are only read from Spotify again if the playlist changed.",
+    "<b>The genre rules changed since this analysis</b> (new Indie Rock family). Analyze the same playlists again to apply them: tags come from the Last.fm cache and tracks are only read from Spotify again if the playlist changed.",
   "analysis.failed": { one: "{count} of {total} playlist failed", other: "{count} of {total} playlists failed" },
   "analysis.failures": { one: "{count} failure", other: "{count} failures" },
   "analysis.skipped": { one: "{count} track skipped by a Spotify error", other: "{count} tracks skipped by a Spotify error" },
@@ -476,4 +476,5 @@ export const en: Dict = {
   "genre.Funk (incerto)": "Funk (uncertain)",
   "genre.Funk Internacional": "International Funk",
   "genre.Eletrônica": "Electronic",
+  "genre.Indie Rock": "Indie Rock",
 };
